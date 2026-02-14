@@ -1,0 +1,133 @@
+Build a modern SaaS web app UI called “ActionLayer” with the tagline “Turn talk into tasks.” using Next.js 14 (App Router) + TypeScript + Tailwind CSS + shadcn/ui (or similar component library). Focus on a polished frontend with mock data and placeholder API calls (no real backend yet).
+
+DESIGN VIBE (SASSY BUT PROFESSIONAL)
+- Style: sleek, bold, slightly “sassy” startup feel while still enterprise-credible.
+- Use subtle gradient accents (NOT heavy), crisp typography, and micro-interactions.
+- Add a signature accent color (electric violet / neon lime style) used sparingly for highlights, badges, and CTAs.
+- Use glassy panels or soft blur backgrounds for hero sections only (keep content readable).
+- Include tasteful hover effects, animated tab underline, and button press states.
+- Light theme default + dark mode toggle. Dark mode should look premium (not washed out).
+
+GLOBAL LAYOUT
+- Left sidebar navigation + top header bar.
+- Sidebar shows:
+  - Logo: ActionLayer
+  - Tagline (small): Turn talk into tasks.
+- Header:
+  - Page title
+  - Project selector dropdown (mock: “BI Data Cloud”, “BSC M360”, “Takeda”)
+  - Right side: search icon, notifications bell, user avatar dropdown
+
+PAGES / ROUTES
+1) / (Dashboard)
+2) /analyze (Transcript Analysis)
+3) /command (Command Mode)
+4) /memory (Project Memory)
+5) /settings (Settings)
+
+SIDEBAR NAV ITEMS
+- Dashboard
+- Transcript Analysis
+- Command Mode
+- Project Memory
+- Settings
+
+COMPONENT REQUIREMENTS
+- Reusable UI: cards, tables, badges, accordions, tabs, modals, empty states, skeleton loaders, toasts.
+- Use mock JSON data + local state store.
+- Add “Copy to clipboard” for Jira/email outputs with toast.
+- Add confirmation modal before “Approve”.
+
+PAGE 1: DASHBOARD (PM COMMAND CENTER)
+Goal: PM sees what matters today.
+- “Today’s Focus” (4 metric cards):
+  - High-risk items
+  - Overdue action items
+  - Decisions awaiting confirmation
+  - Blocked work items
+- “Risk Drift” panel:
+  - Top 5 recurring risks with severity badges (Low/Med/High), “mentioned X times”, “last seen date”
+- “Dependency Chains” panel:
+  - 3 example chains (task → blocked by → owner/team)
+- “Recent Runs” table:
+  - date/time, project, input type (Transcript / Intake / Command), outcome (Escalate / Jira / Follow-up), status
+
+PAGE 2: TRANSCRIPT ANALYSIS (/analyze)
+Two input methods (tabs):
+Tab A: “Upload/Paste Transcript”
+- File uploader (accept .txt, .md, .pdf placeholder)
+- Text area “Paste transcript”
+- Dropdown “Meeting type” (Client Call, Internal Standup, Planning, Incident Review)
+- Button: “Run Analysis”
+
+Tab B: “No Transcript? Quick Intake”
+- Chat-style UI where agent asks 6–8 questions and user answers
+- Store answers into structured “Call Context” object (mock)
+- Button: “Generate Outputs”
+
+After running, show a results area with sub-tabs:
+1) Summary
+   - Exec summary bullets
+   - Highlight cards: Decisions count, Risks count, Blockers count
+2) Decisions (table)
+   - Decision, Owner, Rationale, Date, Confidence, Evidence (collapsible snippet)
+3) Risks (table)
+   - Risk, Likelihood, Impact, Severity badge, Owner, Mitigation, Confidence, Evidence
+4) Dependencies
+   - Visual dependency chain component
+5) Jira Drafts
+   - Accordion per story: Title, User story, Acceptance criteria (bullets), Dependencies, Priority
+   - Buttons: “Copy Jira”, “Export JSON”
+6) Follow-up Draft
+   - Email-like editor with “Copy”, “Regenerate”
+7) Proposed Actions
+   - Checklist of actions:
+     - Create Jira tickets (count)
+     - Send follow-up email (draft)
+     - Escalate risk (draft message)
+   - Buttons: “Approve Selected” and “Edit Before Approving”
+   - Confirmation modal before approve
+- Add “Needs Review” labels for low confidence items.
+
+PAGE 3: COMMAND MODE (/command)
+Title: “Ask ActionLayer”
+- Two input options:
+  A) Chat command box
+  B) “Voice Command” button (no real STT; simulate with ‘Listening…’ then allow user to paste recognized text)
+- Agent response sections:
+  - Interpreted intent
+  - Proposed plan (numbered steps)
+  - Proposed actions checklist
+  - Buttons: “Approve” / “Edit”
+- Suggested command chips:
+  - “What are my top risks this week?”
+  - “Generate weekly status update”
+  - “Create Jira stories from last run”
+  - “What changed since last week?”
+  - “Who is blocked and why?”
+
+PAGE 4: PROJECT MEMORY (/memory)
+- Timeline feed of Decisions, Risks, Action items, Jira drafts
+- Filters: Type, Severity, Date range
+- “Risk Drift” view with simple sparkline placeholders
+- “Cross-call Insights” card (top recurring risks, repeated blockers, decisions not executed)
+
+PAGE 5: SETTINGS (/settings)
+- Toggles (mock):
+  - Strict JSON validation
+  - Require evidence snippets
+  - Auto-generate Jira drafts
+  - Auto-generate follow-up drafts
+- Theme toggle (light/dark)
+- Export data (mock)
+
+EXTRA “COOL” TOUCHES
+- On Dashboard, add a small “ActionLayer is watching the edges” helper text under Risk Drift.
+- Use witty microcopy in empty states, e.g.:
+  - “No risks detected. Either you’re crushing it or the transcript is empty.”
+  - “No decisions found. That meeting could’ve been an email.”
+Keep it tasteful and not too meme-y.
+
+DELIVERABLE
+- Implement full UI scaffold with mock data and placeholder functions.
+- Ensure the app runs without errors and looks premium.
