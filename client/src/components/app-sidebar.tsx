@@ -4,6 +4,7 @@ import {
   FileText,
   Terminal,
   Brain,
+  Calendar,
   Settings,
   Zap,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const navItems = [
   { title: "Transcript Analysis", url: "/analyze", icon: FileText },
   { title: "Command Mode", url: "/command", icon: Terminal },
   { title: "Project Memory", url: "/memory", icon: Brain },
+  { title: "Calendar", url: "/calendar", icon: Calendar },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

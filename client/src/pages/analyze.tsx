@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,11 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useProject } from "@/hooks/use-project";
-import { analyses, approvals } from "@/lib/api";
-import { Upload, Play, Loader2, AlertTriangle, CheckCircle2, Ban, Copy, MessageSquare, ChevronRight, Lightbulb, ArrowRight, FileText, Mail, TrendingUp } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { analyses, approvals, calendar } from "@/lib/api";
+import { Upload, Play, Loader2, AlertTriangle, CheckCircle2, Ban, Copy, MessageSquare, ChevronRight, Lightbulb, ArrowRight, FileText, Mail, TrendingUp, Calendar as CalendarIcon } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 function SeverityBadge({ severity }: { severity: string }) {
   const variants: Record<string, string> = {
@@ -48,7 +50,7 @@ export default function Analyze() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [jiraStories, setJiraStories] = useState<any>(null);
-  const [followUpEmail, setFollowUpEmail] = useState<any>(null);
+  const [followUpEmails, setFollowUpEmails] = useState<any>(null);
   const [weeklyStatus, setWeeklyStatus] = useState<any>(null);
   const [whatChanged, setWhatChanged] = useState<any>(null);
   const [isGeneratingJira, setIsGeneratingJira] = useState(false);
@@ -57,17 +59,65 @@ export default function Analyze() {
   const [isGeneratingChanges, setIsGeneratingChanges] = useState(false);
   const [isApprovingActions, setIsApprovingActions] = useState(false);
   const [actionsApproved, setActionsApproved] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [selectedStory, setSelectedStory] = useState<any>(null);
+  const [deadlineDate, setDeadlineDate] = useState("");
+  const queryClient = useQueryClient();
   
   // Intake mode
   const [intakeStep, setIntakeStep] = useState(0);
   const [intakeAnswers, setIntakeAnswers] = useState<Record<string, string>>({});
   const [currentAnswer, setCurrentAnswer] = useState("");
+  const [followUpCount, setFollowUpCount] = useState(0);
+  const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null);
 
   const { data: intakeQuestions } = useQuery({
     queryKey: ["intake-questions"],
     queryFn: analyses.getIntakeQuestions,
     enabled: inputTab === "intake",
   });
+
+  // Check if we should load a specific analysis (from dashboard view)
+  useEffect(() => {
+    const viewAnalysisId = sessionStorage.getItem('viewAnalysisId');
+    if (viewAnalysisId) {
+      sessionStorage.removeItem('viewAnalysisId');
+      loadAnalysis(viewAnalysisId);
+    }
+  }, []);
+
+  const loadAnalysis = async (analysisId: string) => {
+    try {
+      setIsAnalyzing(true);
+      const result = await analyses.get(analysisId);
+      
+      // Set the analysis result with all the data
+      setAnalysisResult({
+        id: result.id,
+        analysis: result,
+        summary: result.summary || [],
+        decisions: result.decisions || [],
+        risks: result.risks || [],
+        actionItems: result.actionItems || [],
+        dependencies: result.dependencies || [],
+        workflow: result.workflow,
+      });
+      
+      setResultsTab("summary");
+      toast({ 
+        title: "Analysis Loaded", 
+        description: `Viewing analysis from ${new Date(result.createdAt).toLocaleDateString()}` 
+      });
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: "Failed to load analysis", 
+        variant: "destructive" 
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -109,11 +159,25 @@ export default function Analyze() {
     }
   };
 
-  const handleIntakeSubmit = async () => {
-    if (!currentAnswer.trim() || !intakeQuestions) return;
+  const handleIntakeSubmit = async (skipFollowUp = false) => {
+    if (!currentAnswer.trim() && !skipFollowUp) return;
+    if (!intakeQuestions) return;
 
     if (!selectedProjectId) {
       toast({ title: "Error", description: "Please select a project first", variant: "destructive" });
+      return;
+    }
+
+    // If answering a follow-up question
+    if (followUpQuestion && currentAnswer.trim()) {
+      const followUpId = `followup_${followUpCount}`;
+      const newAnswers = { ...intakeAnswers, [followUpId]: currentAnswer.trim() };
+      setIntakeAnswers(newAnswers);
+      setCurrentAnswer("");
+      setFollowUpQuestion(null);
+      
+      // Process with these answers
+      await processIntake(newAnswers, true); // Skip further follow-ups
       return;
     }
 
@@ -125,31 +189,40 @@ export default function Analyze() {
     if (intakeStep < intakeQuestions.questions.length - 1) {
       setIntakeStep(intakeStep + 1);
     } else {
-      // Process intake
-      setIsAnalyzing(true);
-      try {
-        const result = await analyses.processIntake({
-          projectId: selectedProjectId,
-          answers: newAnswers,
+      // All initial questions answered, process intake
+      await processIntake(newAnswers, skipFollowUp || followUpCount >= 2);
+    }
+  };
+
+  const processIntake = async (answers: Record<string, string>, skipFollowUp: boolean) => {
+    setIsAnalyzing(true);
+    try {
+      const result = await analyses.processIntake({
+        projectId: selectedProjectId!,
+        answers,
+        skipFollowUp,
+      });
+      
+      if (result.needsFollowUp && !skipFollowUp && followUpCount < 2) {
+        // Show follow-up question
+        setFollowUpQuestion(result.question);
+        setFollowUpCount(followUpCount + 1);
+        setIsAnalyzing(false);
+      } else {
+        // Store the full result including the analysis.id
+        setAnalysisResult({
+          id: result.analysis.id,
+          ...result,
         });
-        
-        if (result.needsFollowUp) {
-          // Add follow-up question
-          toast({ title: "Follow-up Question", description: result.question });
-        } else {
-          // Store the full result including the analysis.id
-          setAnalysisResult({
-            id: result.analysis.id, // Extract the ID from the nested analysis object
-            ...result,
-          });
-          setResultsTab("summary");
-          toast({ title: "Intake Complete", description: "Analysis generated from your responses." });
-        }
-      } catch (error: any) {
-        toast({ title: "Processing Failed", description: error.message, variant: "destructive" });
-      } finally {
+        setResultsTab("summary");
+        setFollowUpQuestion(null);
+        setFollowUpCount(0);
+        toast({ title: "Intake Complete", description: "Analysis generated from your responses." });
         setIsAnalyzing(false);
       }
+    } catch (error: any) {
+      toast({ title: "Processing Failed", description: error.message, variant: "destructive" });
+      setIsAnalyzing(false);
     }
   };
 
@@ -180,9 +253,20 @@ export default function Analyze() {
     setIsGeneratingFollowUp(true);
     try {
       const result = await analyses.generateFollowUp(analysisResult.id);
-      // Backend returns { email }, use it directly
-      setFollowUpEmail(result.email);
-      toast({ title: "Follow-Up Generated", description: "Email draft is ready." });
+      // Backend returns { emails } with multiple targeted emails
+      setFollowUpEmails(result.emails);
+      
+      const emailCount = [
+        result.emails.general,
+        result.emails.risks,
+        result.emails.blockers,
+        result.emails.actions
+      ].filter(Boolean).length;
+      
+      toast({ 
+        title: "Follow-Ups Generated", 
+        description: `${emailCount} targeted email${emailCount > 1 ? 's' : ''} ready for different stakeholders.` 
+      });
     } catch (error: any) {
       toast({ title: "Generation Failed", description: error.message, variant: "destructive" });
     } finally {
@@ -245,16 +329,95 @@ export default function Analyze() {
     setIsApprovingActions(true);
     try {
       await approvals.reject(analysisResult.id, "Actions rejected by user");
+      
+      // Mark all action items as cancelled
+      const updatedActionItems = analysisResult.actionItems?.map((item: any) => ({
+        ...item,
+        status: "cancelled"
+      })) || [];
+      
+      setAnalysisResult({
+        ...analysisResult,
+        actionItems: updatedActionItems
+      });
+      
       setActionsApproved(true);
       toast({ 
         title: "Actions Rejected", 
-        description: "Proposed actions have been rejected." 
+        description: "Proposed actions have been rejected and marked as cancelled." 
       });
     } catch (error: any) {
       toast({ title: "Rejection Failed", description: error.message, variant: "destructive" });
     } finally {
       setIsApprovingActions(false);
     }
+  };
+
+  // Schedule story deadline mutation
+  const scheduleDeadlineMutation = useMutation({
+    mutationFn: async (data: any) => {
+      console.log('[Schedule] Sending data:', data);
+      try {
+        const result = await calendar.create(data);
+        console.log('[Schedule] Success:', result);
+        return result;
+      } catch (error) {
+        console.error('[Schedule] Error:', error);
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      // Don't invalidate calendar queries here since we're not on the calendar page
+      // The calendar page will fetch fresh data when the user navigates to it
+      toast({ 
+        title: "Deadline Scheduled", 
+        description: "Story deadline has been added to your calendar. Visit the Calendar page to see it." 
+      });
+      setScheduleDialogOpen(false);
+      setSelectedStory(null);
+      setDeadlineDate("");
+    },
+    onError: (error: any) => {
+      console.error('[Schedule] Mutation error:', error);
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to schedule deadline", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleScheduleStory = (story: any) => {
+    setSelectedStory(story);
+    setScheduleDialogOpen(true);
+  };
+
+  const handleConfirmSchedule = () => {
+    if (!selectedProjectId || !selectedStory || !deadlineDate) {
+      toast({ title: "Error", description: "Please select a deadline date", variant: "destructive" });
+      return;
+    }
+
+    console.log('[Schedule] Creating event with:', {
+      projectId: selectedProjectId,
+      title: `Deadline: ${selectedStory.title}`,
+      deadlineDate,
+      analysisId: analysisResult?.id,
+    });
+
+    const eventData = {
+      projectId: selectedProjectId,
+      title: `Deadline: ${selectedStory.title}`,
+      description: selectedStory.userStory || "",
+      eventType: "deadline",
+      startDate: new Date(deadlineDate).toISOString(),
+      allDay: true,
+      relatedAnalysisId: analysisResult?.id || undefined,
+      reminderMinutes: 1440, // 1 day before
+    };
+
+    console.log('[Schedule] Event data:', eventData);
+    scheduleDeadlineMutation.mutate(eventData);
   };
 
   return (
@@ -334,7 +497,7 @@ export default function Analyze() {
                         );
                       })}
                       
-                      {intakeStep < intakeQuestions.questions.length && (
+                      {intakeStep < intakeQuestions.questions.length && !followUpQuestion && (
                         <div className="space-y-3">
                           <div className="flex items-start gap-2">
                             <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5">
@@ -350,13 +513,46 @@ export default function Analyze() {
                               onKeyDown={(e) => e.key === "Enter" && handleIntakeSubmit()}
                               disabled={isAnalyzing}
                             />
-                            <Button onClick={handleIntakeSubmit} size="icon" disabled={isAnalyzing}>
+                            <Button onClick={() => handleIntakeSubmit()} size="icon" disabled={isAnalyzing}>
                               {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
                             </Button>
                           </div>
                           <p className="text-xs text-muted-foreground ml-8">
                             Question {intakeStep + 1} of {intakeQuestions.questions.length}
                           </p>
+                        </div>
+                      )}
+
+                      {followUpQuestion && (
+                        <div className="space-y-3 mt-4 p-4 bg-primary/5 rounded-md border border-primary/20">
+                          <div className="flex items-start gap-2">
+                            <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5">
+                              <Lightbulb className="h-3 w-3 text-primary-foreground" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium mb-1">Follow-up Question</p>
+                              <p className="text-sm text-muted-foreground">{followUpQuestion}</p>
+                            </div>
+                          </div>
+                          <div className="ml-8 flex gap-2">
+                            <Input
+                              value={currentAnswer}
+                              onChange={(e) => setCurrentAnswer(e.target.value)}
+                              placeholder="Type your answer..."
+                              onKeyDown={(e) => e.key === "Enter" && handleIntakeSubmit()}
+                              disabled={isAnalyzing}
+                            />
+                            <Button onClick={() => handleIntakeSubmit()} size="icon" disabled={isAnalyzing}>
+                              {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              onClick={() => handleIntakeSubmit(true)} 
+                              disabled={isAnalyzing}
+                            >
+                              Skip
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -406,7 +602,7 @@ export default function Analyze() {
                   {isGeneratingChanges ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <TrendingUp className="h-4 w-4 mr-1.5" />}
                   What Changed?
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setAnalysisResult(null); setJiraStories(null); setFollowUpEmail(null); setWeeklyStatus(null); setWhatChanged(null); setActionsApproved(false); setIntakeStep(0); setIntakeAnswers({}); }}>
+                <Button variant="outline" size="sm" onClick={() => { setAnalysisResult(null); setJiraStories(null); setFollowUpEmails(null); setWeeklyStatus(null); setWhatChanged(null); setActionsApproved(false); setIntakeStep(0); setIntakeAnswers({}); }}>
                   New Analysis
                 </Button>
               </div>
@@ -559,14 +755,30 @@ export default function Analyze() {
                           <TableHead>Action</TableHead>
                           <TableHead>Owner</TableHead>
                           <TableHead>Priority</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {analysisResult.actionItems?.map((a: any, i: number) => (
-                          <TableRow key={i}>
-                            <TableCell className="text-sm">{a.action}</TableCell>
+                          <TableRow key={i} className={a.status === "cancelled" ? "opacity-50" : ""}>
+                            <TableCell className={`text-sm ${a.status === "cancelled" ? "line-through" : ""}`}>
+                              {a.action}
+                            </TableCell>
                             <TableCell className="text-sm">{a.owner || "Unassigned"}</TableCell>
                             <TableCell><SeverityBadge severity={a.priority || "Med"} /></TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[11px] ${
+                                  a.status === "completed" ? "bg-green-500/10 text-green-600 border-green-500/20" :
+                                  a.status === "cancelled" ? "bg-red-500/10 text-red-600 border-red-500/20" :
+                                  a.status === "in-progress" ? "bg-blue-500/10 text-blue-600 border-blue-500/20" :
+                                  "bg-gray-500/10 text-gray-600 border-gray-500/20"
+                                }`}
+                              >
+                                {a.status || "pending"}
+                              </Badge>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -637,6 +849,16 @@ export default function Analyze() {
                               <span className="text-xs">{story.dependencies.join(", ")}</span>
                             </div>
                           )}
+                          <div className="ml-auto">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleScheduleStory(story)}
+                            >
+                              <CalendarIcon className="h-3 w-3 mr-1.5" />
+                              Schedule Deadline
+                            </Button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -645,35 +867,173 @@ export default function Analyze() {
               </Card>
             )}
 
-            {followUpEmail && (
-              <Card className="mt-6">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-base">Follow-Up Email Draft</CardTitle>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => handleCopy(
-                      `Subject: ${followUpEmail.subject}\n\n${followUpEmail.body}`,
-                      "Email draft"
-                    )}
-                  >
-                    <Copy className="h-4 w-4 mr-1.5" />
-                    Copy Email
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Subject:</p>
-                    <p className="text-sm font-semibold">{followUpEmail.subject}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Body:</p>
-                    <div className="bg-muted/50 rounded-md p-4 text-sm whitespace-pre-wrap font-mono">
-                      {followUpEmail.body}
+            {followUpEmails && (
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold">Follow-Up Emails</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {[followUpEmails.general, followUpEmails.risks, followUpEmails.blockers, followUpEmails.actions].filter(Boolean).length} targeted emails generated
+                  </p>
+                </div>
+
+                {/* General Summary Email */}
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-blue-500" />
+                        General Summary
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        To: {followUpEmails.general.recipients}
+                      </p>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => handleCopy(
+                        `Subject: ${followUpEmails.general.subject}\n\n${followUpEmails.general.body}`,
+                        "General email"
+                      )}
+                    >
+                      <Copy className="h-4 w-4 mr-1.5" />
+                      Copy
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Subject:</p>
+                      <p className="text-sm font-semibold">{followUpEmails.general.subject}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Body:</p>
+                      <div className="bg-muted/50 rounded-md p-4 text-sm whitespace-pre-wrap">
+                        {followUpEmails.general.body}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Risk Email */}
+                {followUpEmails.risks && (
+                  <Card className="border-l-4 border-l-destructive">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-destructive" />
+                          Risk Alert
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          To: {followUpEmails.risks.recipients}
+                        </p>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleCopy(
+                          `Subject: ${followUpEmails.risks.subject}\n\n${followUpEmails.risks.body}`,
+                          "Risk email"
+                        )}
+                      >
+                        <Copy className="h-4 w-4 mr-1.5" />
+                        Copy
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Subject:</p>
+                        <p className="text-sm font-semibold">{followUpEmails.risks.subject}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Body:</p>
+                        <div className="bg-destructive/5 rounded-md p-4 text-sm whitespace-pre-wrap border border-destructive/20">
+                          {followUpEmails.risks.body}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Blocker Email */}
+                {followUpEmails.blockers && (
+                  <Card className="border-l-4 border-l-orange-500">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Ban className="h-4 w-4 text-orange-500" />
+                          Blockers & Dependencies
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          To: {followUpEmails.blockers.recipients}
+                        </p>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleCopy(
+                          `Subject: ${followUpEmails.blockers.subject}\n\n${followUpEmails.blockers.body}`,
+                          "Blocker email"
+                        )}
+                      >
+                        <Copy className="h-4 w-4 mr-1.5" />
+                        Copy
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Subject:</p>
+                        <p className="text-sm font-semibold">{followUpEmails.blockers.subject}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Body:</p>
+                        <div className="bg-orange-500/5 rounded-md p-4 text-sm whitespace-pre-wrap border border-orange-500/20">
+                          {followUpEmails.blockers.body}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Action Items Email */}
+                {followUpEmails.actions && (
+                  <Card className="border-l-4 border-l-primary">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                          Action Items
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          To: {followUpEmails.actions.recipients}
+                        </p>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleCopy(
+                          `Subject: ${followUpEmails.actions.subject}\n\n${followUpEmails.actions.body}`,
+                          "Action items email"
+                        )}
+                      >
+                        <Copy className="h-4 w-4 mr-1.5" />
+                        Copy
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Subject:</p>
+                        <p className="text-sm font-semibold">{followUpEmails.actions.subject}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Body:</p>
+                        <div className="bg-primary/5 rounded-md p-4 text-sm whitespace-pre-wrap border border-primary/20">
+                          {followUpEmails.actions.body}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             )}
 
             {analysisResult?.workflow && !actionsApproved && (
@@ -876,6 +1236,61 @@ export default function Analyze() {
             )}
           </>
         )}
+
+        {/* Schedule Deadline Dialog */}
+        <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Schedule Story Deadline</DialogTitle>
+            </DialogHeader>
+            {selectedStory && (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{selectedStory.title}</p>
+                  <p className="text-xs text-muted-foreground">{selectedStory.userStory}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="deadline">Deadline Date</Label>
+                  <Input
+                    id="deadline"
+                    type="date"
+                    value={deadlineDate}
+                    onChange={(e) => setDeadlineDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This will create a deadline event in your calendar with a 1-day reminder
+                  </p>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setScheduleDialogOpen(false);
+                setSelectedStory(null);
+                setDeadlineDate("");
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleConfirmSchedule}
+                disabled={scheduleDeadlineMutation.isPending || !deadlineDate}
+              >
+                {scheduleDeadlineMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                    Scheduling...
+                  </>
+                ) : (
+                  <>
+                    <CalendarIcon className="h-4 w-4 mr-1.5" />
+                    Add to Calendar
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

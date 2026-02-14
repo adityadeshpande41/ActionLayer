@@ -155,37 +155,156 @@ export async function generateFollowUpEmail(
   decisions: any[],
   actionItems: any[],
   risks: any[]
-): Promise<{ subject: string; body: string }> {
-  const prompt = `Generate a professional follow-up email for a meeting with:
+): Promise<{
+  general: { subject: string; body: string; recipients: string };
+  risks: { subject: string; body: string; recipients: string } | null;
+  blockers: { subject: string; body: string; recipients: string } | null;
+  actions: { subject: string; body: string; recipients: string } | null;
+}> {
+  // Generate general summary email
+  const generalPrompt = `Generate a professional follow-up email summarizing a meeting.
 
 Summary: ${summary.join("; ")}
-Decisions: ${JSON.stringify(decisions)}
-Action Items: ${JSON.stringify(actionItems)}
-Top Risks: ${JSON.stringify(risks.slice(0, 3))}
+Decisions: ${decisions.length} key decisions made
+Action Items: ${actionItems.length} action items assigned
+Risks: ${risks.length} risks identified
 
-The email should be:
-- Professional but friendly
-- Well-structured with sections
-- Include key decisions, action items, and risks to watch
-- End with next steps
+Create a concise executive summary email that:
+- Highlights key outcomes and decisions
+- Mentions action items and risks at a high level
+- Is suitable for all stakeholders
+- Professional but friendly tone
 - Signed "ActionLayer AI"
 
-Return a JSON object with this structure:
+Return JSON:
 {
   "subject": "Meeting Follow-Up: [brief topic]",
-  "body": "Full email body text with proper formatting"
+  "body": "Full email body with proper formatting",
+  "recipients": "All Stakeholders"
 }`;
 
-  const completion = await openai.chat.completions.create({
+  const generalCompletion = await openai.chat.completions.create({
     model: "gpt-4o",
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: generalPrompt }],
     response_format: { type: "json_object" },
     temperature: 0.7,
   });
 
-  const result = JSON.parse(completion.choices[0].message.content || '{"subject": "Meeting Follow-Up", "body": ""}');
-  return result;
+  const general = JSON.parse(generalCompletion.choices[0].message.content || '{"subject": "Meeting Follow-Up", "body": "", "recipients": "All Stakeholders"}');
+
+  // Generate risk-specific email if there are high/medium risks
+  let riskEmail = null;
+  const criticalRisks = risks.filter((r: any) => r.severity === "High" || r.severity === "Med");
+  if (criticalRisks.length > 0) {
+    const riskPrompt = `Generate a focused email about project risks for product owners and risk managers.
+
+Risks Identified:
+${JSON.stringify(criticalRisks, null, 2)}
+
+Create a detailed risk-focused email that:
+- Lists each risk with severity, impact, and likelihood
+- Includes mitigation strategies
+- Identifies risk owners
+- Requests immediate attention for high-severity items
+- Professional and urgent tone for critical items
+- Signed "ActionLayer AI"
+
+Return JSON:
+{
+  "subject": "⚠️ Risk Alert: [project/topic]",
+  "body": "Detailed risk breakdown with mitigation plans",
+  "recipients": "Product Owners, Risk Managers"
+}`;
+
+    const riskCompletion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: riskPrompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.6,
+    });
+
+    riskEmail = JSON.parse(riskCompletion.choices[0].message.content || '{"subject": "Risk Alert", "body": "", "recipients": "Product Owners"}');
+  }
+
+  // Generate blocker/dependency email if there are dependencies
+  let blockerEmail = null;
+  const blockers = actionItems.filter((a: any) =>
+    a.action.toLowerCase().includes("blocked") ||
+    a.action.toLowerCase().includes("dependency") ||
+    a.action.toLowerCase().includes("waiting")
+  );
+  if (blockers.length > 0) {
+    const blockerPrompt = `Generate an email about blockers and dependencies for team leads and managers.
+
+Blockers/Dependencies:
+${JSON.stringify(blockers, null, 2)}
+
+Create a focused email that:
+- Lists each blocker with owner and priority
+- Identifies what's blocking what
+- Requests immediate action to unblock
+- Suggests escalation if needed
+- Clear call-to-action
+- Signed "ActionLayer AI"
+
+Return JSON:
+{
+  "subject": "🚧 Action Required: Blockers & Dependencies",
+  "body": "Detailed blocker breakdown with action requests",
+  "recipients": "Team Leads, Engineering Managers"
+}`;
+
+    const blockerCompletion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: blockerPrompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.6,
+    });
+
+    blockerEmail = JSON.parse(blockerCompletion.choices[0].message.content || '{"subject": "Blockers Alert", "body": "", "recipients": "Team Leads"}');
+  }
+
+  // Generate action items email if there are action items
+  let actionsEmail = null;
+  if (actionItems.length > 0) {
+    const actionsPrompt = `Generate an email listing action items for assignees.
+
+Action Items:
+${JSON.stringify(actionItems, null, 2)}
+
+Create a clear action-oriented email that:
+- Lists each action item with owner and priority
+- Groups by owner if possible
+- Includes clear deadlines or urgency
+- Requests confirmation of receipt
+- Friendly but professional tone
+- Signed "ActionLayer AI"
+
+Return JSON:
+{
+  "subject": "✅ Action Items from Meeting",
+  "body": "Organized list of action items by owner",
+  "recipients": "Action Item Owners"
+}`;
+
+    const actionsCompletion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: actionsPrompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.6,
+    });
+
+    actionsEmail = JSON.parse(actionsCompletion.choices[0].message.content || '{"subject": "Action Items", "body": "", "recipients": "Assignees"}');
+  }
+
+  return {
+    general,
+    risks: riskEmail,
+    blockers: blockerEmail,
+    actions: actionsEmail,
+  };
 }
+
 
 export async function generateWeeklyStatusUpdate(
   projectId: string,

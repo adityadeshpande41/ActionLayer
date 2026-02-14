@@ -9,6 +9,7 @@ import { commandRouter } from "./routes/command";
 import { dashboardRouter } from "./routes/dashboard";
 import { approvalsRouter } from "./routes/approvals";
 import { initRouter } from "./routes/init";
+import { calendarRouter } from "./routes/calendar";
 
 // Session middleware
 const sessionMiddleware = session({
@@ -66,6 +67,7 @@ export async function registerRoutes(
   app.use("/api/dashboard", requireAuth, dashboardRouter);
   app.use("/api/approvals", requireAuth, approvalsRouter);
   app.use("/api/init", requireAuth, initRouter);
+  app.use("/api/calendar", requireAuth, calendarRouter);
 
   // Health check
   app.get("/api/health", (req, res) => {

@@ -13,7 +13,19 @@ import {
   type InsertRisk,
   type ActionItem,
   type InsertActionItem,
+  type CalendarEvent,
+  type InsertCalendarEvent,
+  users,
+  projects,
+  transcripts,
+  analyses,
+  decisions,
+  risks,
+  actionItems,
+  calendarEvents,
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -39,6 +51,7 @@ export interface IStorage {
   getRecentAnalyses(limit?: number): Promise<Analysis[]>;
   createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
   updateAnalysis(id: string, analysis: Partial<InsertAnalysis>): Promise<Analysis | undefined>;
+  deleteAnalysis(id: string): Promise<boolean>;
 
   // Decisions
   getDecisionsByAnalysisId(analysisId: string): Promise<Decision[]>;
@@ -56,6 +69,15 @@ export interface IStorage {
   getActionItemsByProjectId(projectId: string): Promise<ActionItem[]>;
   createActionItem(actionItem: InsertActionItem): Promise<ActionItem>;
   updateActionItem(id: string, actionItem: Partial<InsertActionItem>): Promise<ActionItem | undefined>;
+
+  // Calendar Events
+  getCalendarEvent(id: string): Promise<CalendarEvent | undefined>;
+  getCalendarEventsByProjectId(projectId: string): Promise<CalendarEvent[]>;
+  getCalendarEventsByDateRange(projectId: string, startDate: Date, endDate: Date): Promise<CalendarEvent[]>;
+  getUpcomingEvents(projectId: string, limit?: number): Promise<CalendarEvent[]>;
+  createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
+  updateCalendarEvent(id: string, event: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined>;
+  deleteCalendarEvent(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -66,6 +88,7 @@ export class MemStorage implements IStorage {
   private decisions: Map<string, Decision>;
   private risks: Map<string, Risk>;
   private actionItems: Map<string, ActionItem>;
+  private calendarEvents: Map<string, CalendarEvent>;
 
   constructor() {
     this.users = new Map();
@@ -75,6 +98,7 @@ export class MemStorage implements IStorage {
     this.decisions = new Map();
     this.risks = new Map();
     this.actionItems = new Map();
+    this.calendarEvents = new Map();
   }
 
   // Users
@@ -199,6 +223,37 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
+  async deleteAnalysis(id: string): Promise<boolean> {
+    // In a real database, this would cascade delete related records
+    // For now, we'll manually delete related data
+    const analysis = this.analyses.get(id);
+    if (!analysis) return false;
+
+    // Delete related decisions
+    Array.from(this.decisions.entries()).forEach(([key, decision]) => {
+      if (decision.analysisId === id) {
+        this.decisions.delete(key);
+      }
+    });
+
+    // Delete related risks
+    Array.from(this.risks.entries()).forEach(([key, risk]) => {
+      if (risk.analysisId === id) {
+        this.risks.delete(key);
+      }
+    });
+
+    // Delete related action items
+    Array.from(this.actionItems.entries()).forEach(([key, item]) => {
+      if (item.analysisId === id) {
+        this.actionItems.delete(key);
+      }
+    });
+
+    // Delete the analysis itself
+    return this.analyses.delete(id);
+  }
+
   // Decisions
   async getDecisionsByAnalysisId(analysisId: string): Promise<Decision[]> {
     return Array.from(this.decisions.values()).filter(
@@ -307,6 +362,376 @@ export class MemStorage implements IStorage {
     this.actionItems.set(id, updated);
     return updated;
   }
+
+  // Calendar Events
+  async getCalendarEvent(id: string): Promise<CalendarEvent | undefined> {
+    return this.calendarEvents.get(id);
+  }
+
+  async getCalendarEventsByProjectId(projectId: string): Promise<CalendarEvent[]> {
+    return Array.from(this.calendarEvents.values())
+      .filter((event) => event.projectId === projectId)
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  }
+
+  async getCalendarEventsByDateRange(projectId: string, startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
+    return Array.from(this.calendarEvents.values())
+      .filter((event) => 
+        event.projectId === projectId &&
+        new Date(event.startDate) >= startDate &&
+        new Date(event.startDate) <= endDate
+      )
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  }
+
+  async getUpcomingEvents(projectId: string, limit: number = 10): Promise<CalendarEvent[]> {
+    const now = new Date();
+    return Array.from(this.calendarEvents.values())
+      .filter((event) => 
+        event.projectId === projectId &&
+        new Date(event.startDate) >= now &&
+        event.status === "scheduled"
+      )
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+      .slice(0, limit);
+  }
+
+  async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
+    const id = randomUUID();
+    const now = new Date();
+    const event: CalendarEvent = {
+      ...insertEvent,
+      id,
+      status: insertEvent.status || "scheduled",
+      allDay: insertEvent.allDay ?? false,
+      endDate: insertEvent.endDate || null,
+      location: insertEvent.location || null,
+      attendees: insertEvent.attendees || null,
+      relatedAnalysisId: insertEvent.relatedAnalysisId || null,
+      relatedActionItemId: insertEvent.relatedActionItemId || null,
+      reminderMinutes: insertEvent.reminderMinutes || null,
+      description: insertEvent.description || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.calendarEvents.set(id, event);
+    return event;
+  }
+
+  async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
+    const event = this.calendarEvents.get(id);
+    if (!event) return undefined;
+    const updated = { ...event, ...updates, updatedAt: new Date() };
+    this.calendarEvents.set(id, updated);
+    return updated;
+  }
+
+  async deleteCalendarEvent(id: string): Promise<boolean> {
+    return this.calendarEvents.delete(id);
+  }
 }
 
-export const storage = new MemStorage();
+// Old in-memory storage - replaced with SQLite
+// export const storage = new MemStorage();
+
+
+// SQLite Storage Implementation
+export class SqliteStorage implements IStorage {
+  // Users
+  async getUser(id: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    return result[0];
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = randomUUID();
+    const user: User = {
+      ...insertUser,
+      id,
+      email: insertUser.email || null,
+      createdAt: new Date(),
+    };
+    await db.insert(users).values(user);
+    return user;
+  }
+
+  // Projects
+  async getProject(id: string): Promise<Project | undefined> {
+    const result = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getProjectsByUserId(userId: string): Promise<Project[]> {
+    return await db.select().from(projects).where(eq(projects.ownerId, userId));
+  }
+
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const id = randomUUID();
+    const now = new Date();
+    const project: Project = {
+      ...insertProject,
+      id,
+      description: insertProject.description || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.insert(projects).values(project);
+    return project;
+  }
+
+  async updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined> {
+    await db.update(projects)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projects.id, id));
+    return this.getProject(id);
+  }
+
+  // Transcripts
+  async getTranscript(id: string): Promise<Transcript | undefined> {
+    const result = await db.select().from(transcripts).where(eq(transcripts.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getTranscriptsByProjectId(projectId: string): Promise<Transcript[]> {
+    return await db.select().from(transcripts).where(eq(transcripts.projectId, projectId));
+  }
+
+  async createTranscript(insertTranscript: InsertTranscript): Promise<Transcript> {
+    const id = randomUUID();
+    const transcript: Transcript = {
+      ...insertTranscript,
+      id,
+      meetingType: insertTranscript.meetingType || null,
+      fileName: insertTranscript.fileName || null,
+      createdAt: new Date(),
+    };
+    await db.insert(transcripts).values(transcript);
+    return transcript;
+  }
+
+  // Analyses
+  async getAnalysis(id: string): Promise<Analysis | undefined> {
+    const result = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getAnalysesByProjectId(projectId: string): Promise<Analysis[]> {
+    return await db.select()
+      .from(analyses)
+      .where(eq(analyses.projectId, projectId))
+      .orderBy(desc(analyses.createdAt));
+  }
+
+  async getRecentAnalyses(limit: number = 10): Promise<Analysis[]> {
+    return await db.select()
+      .from(analyses)
+      .orderBy(desc(analyses.createdAt))
+      .limit(limit);
+  }
+
+  async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
+    const id = randomUUID();
+    const analysis: Analysis = {
+      ...insertAnalysis,
+      id,
+      summary: insertAnalysis.summary || null,
+      transcriptId: insertAnalysis.transcriptId || null,
+      status: insertAnalysis.status || "completed",
+      decisionsCount: insertAnalysis.decisionsCount || null,
+      risksCount: insertAnalysis.risksCount || null,
+      blockersCount: insertAnalysis.blockersCount || null,
+      createdAt: new Date(),
+    };
+    await db.insert(analyses).values(analysis);
+    return analysis;
+  }
+
+  async updateAnalysis(id: string, updates: Partial<InsertAnalysis>): Promise<Analysis | undefined> {
+    await db.update(analyses).set(updates).where(eq(analyses.id, id));
+    return this.getAnalysis(id);
+  }
+
+  async deleteAnalysis(id: string): Promise<boolean> {
+    // Delete related data (cascade)
+    await db.delete(decisions).where(eq(decisions.analysisId, id));
+    await db.delete(risks).where(eq(risks.analysisId, id));
+    await db.delete(actionItems).where(eq(actionItems.analysisId, id));
+    
+    // Delete the analysis
+    const result = await db.delete(analyses).where(eq(analyses.id, id));
+    return true;
+  }
+
+  // Decisions
+  async getDecisionsByAnalysisId(analysisId: string): Promise<Decision[]> {
+    return await db.select().from(decisions).where(eq(decisions.analysisId, analysisId));
+  }
+
+  async getDecisionsByProjectId(projectId: string): Promise<Decision[]> {
+    return await db.select().from(decisions).where(eq(decisions.projectId, projectId));
+  }
+
+  async createDecision(insertDecision: InsertDecision): Promise<Decision> {
+    const id = randomUUID();
+    const decision: Decision = {
+      ...insertDecision,
+      id,
+      owner: insertDecision.owner || null,
+      rationale: insertDecision.rationale || null,
+      confidence: insertDecision.confidence || null,
+      evidence: insertDecision.evidence || null,
+      createdAt: new Date(),
+    };
+    await db.insert(decisions).values(decision);
+    return decision;
+  }
+
+  // Risks
+  async getRisksByAnalysisId(analysisId: string): Promise<Risk[]> {
+    return await db.select().from(risks).where(eq(risks.analysisId, analysisId));
+  }
+
+  async getRisksByProjectId(projectId: string): Promise<Risk[]> {
+    return await db.select().from(risks).where(eq(risks.projectId, projectId));
+  }
+
+  async getTopRisks(limit: number = 5): Promise<Risk[]> {
+    return await db.select()
+      .from(risks)
+      .orderBy(desc(risks.mentions))
+      .limit(limit);
+  }
+
+  async createRisk(insertRisk: InsertRisk): Promise<Risk> {
+    const id = randomUUID();
+    const now = new Date();
+    const risk: Risk = {
+      ...insertRisk,
+      id,
+      owner: insertRisk.owner || null,
+      likelihood: insertRisk.likelihood || null,
+      impact: insertRisk.impact || null,
+      mitigation: insertRisk.mitigation || null,
+      confidence: insertRisk.confidence || null,
+      evidence: insertRisk.evidence || null,
+      mentions: 1,
+      createdAt: now,
+      lastSeen: now,
+    };
+    await db.insert(risks).values(risk);
+    return risk;
+  }
+
+  // Action Items
+  async getActionItemsByAnalysisId(analysisId: string): Promise<ActionItem[]> {
+    return await db.select().from(actionItems).where(eq(actionItems.analysisId, analysisId));
+  }
+
+  async getActionItemsByProjectId(projectId: string): Promise<ActionItem[]> {
+    return await db.select().from(actionItems).where(eq(actionItems.projectId, projectId));
+  }
+
+  async createActionItem(insertActionItem: InsertActionItem): Promise<ActionItem> {
+    const id = randomUUID();
+    const actionItem: ActionItem = {
+      ...insertActionItem,
+      id,
+      owner: insertActionItem.owner || null,
+      dueDate: insertActionItem.dueDate || null,
+      status: insertActionItem.status || null,
+      priority: insertActionItem.priority || null,
+      createdAt: new Date(),
+    };
+    await db.insert(actionItems).values(actionItem);
+    return actionItem;
+  }
+
+  async updateActionItem(id: string, updates: Partial<InsertActionItem>): Promise<ActionItem | undefined> {
+    await db.update(actionItems).set(updates).where(eq(actionItems.id, id));
+    const result = await db.select().from(actionItems).where(eq(actionItems.id, id)).limit(1);
+    return result[0];
+  }
+
+  // Calendar Events
+  async getCalendarEvent(id: string): Promise<CalendarEvent | undefined> {
+    const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getCalendarEventsByProjectId(projectId: string): Promise<CalendarEvent[]> {
+    return await db.select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.projectId, projectId))
+      .orderBy(calendarEvents.startDate);
+  }
+
+  async getCalendarEventsByDateRange(projectId: string, startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
+    return await db.select()
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.projectId, projectId),
+          gte(calendarEvents.startDate, startDate),
+          lte(calendarEvents.startDate, endDate)
+        )
+      )
+      .orderBy(calendarEvents.startDate);
+  }
+
+  async getUpcomingEvents(projectId: string, limit: number = 10): Promise<CalendarEvent[]> {
+    const now = new Date();
+    return await db.select()
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.projectId, projectId),
+          gte(calendarEvents.startDate, now),
+          eq(calendarEvents.status, "scheduled")
+        )
+      )
+      .orderBy(calendarEvents.startDate)
+      .limit(limit);
+  }
+
+  async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
+    const id = randomUUID();
+    const now = new Date();
+    const event: CalendarEvent = {
+      ...insertEvent,
+      id,
+      status: insertEvent.status || "scheduled",
+      allDay: insertEvent.allDay ?? false,
+      endDate: insertEvent.endDate || null,
+      location: insertEvent.location || null,
+      attendees: insertEvent.attendees || null,
+      relatedAnalysisId: insertEvent.relatedAnalysisId || null,
+      relatedActionItemId: insertEvent.relatedActionItemId || null,
+      reminderMinutes: insertEvent.reminderMinutes || null,
+      description: insertEvent.description || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.insert(calendarEvents).values(event);
+    return event;
+  }
+
+  async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
+    await db.update(calendarEvents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(calendarEvents.id, id));
+    return this.getCalendarEvent(id);
+  }
+
+  async deleteCalendarEvent(id: string): Promise<boolean> {
+    await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+    return true;
+  }
+}
+
+// Export the storage instance - now using SQLite!
+export const storage = new SqliteStorage();

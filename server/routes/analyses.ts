@@ -27,7 +27,7 @@ analysesRouter.post("/intake/process", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { projectId, answers } = req.body;
+    const { projectId, answers, skipFollowUp } = req.body;
     if (!projectId || !answers) {
       return res.status(400).json({ error: "Project ID and answers are required" });
     }
@@ -35,15 +35,18 @@ analysesRouter.post("/intake/process", async (req, res) => {
     // Synthesize intake into context
     const synthesizedContext = await synthesizeIntakeToContext(answers);
 
-    // Check if follow-up needed
-    const followUpQuestion = await generateFollowUpQuestion(answers, synthesizedContext);
+    // Check if follow-up needed (only if not explicitly skipped and we have fewer than 10 answers)
+    const answerCount = Object.keys(answers).length;
+    if (!skipFollowUp && answerCount < 10) {
+      const followUpQuestion = await generateFollowUpQuestion(answers, synthesizedContext);
 
-    if (followUpQuestion) {
-      return res.json({
-        needsFollowUp: true,
-        question: followUpQuestion,
-        context: synthesizedContext,
-      });
+      if (followUpQuestion) {
+        return res.json({
+          needsFollowUp: true,
+          question: followUpQuestion,
+          context: synthesizedContext,
+        });
+      }
     }
 
     // Create analysis record
@@ -373,14 +376,14 @@ analysesRouter.post("/:id/followup", async (req, res) => {
       storage.getRisksByAnalysisId(req.params.id),
     ]);
 
-    const email = await generateFollowUpEmail(
+    const emails = await generateFollowUpEmail(
       (analysis.summary as any) || [],
       decisions,
       actionItems,
       risks
     );
 
-    res.json({ email });
+    res.json({ emails });
   } catch (error) {
     console.error("Error generating follow-up email:", error);
     res.status(500).json({ error: "Failed to generate follow-up email" });
@@ -497,5 +500,37 @@ analysesRouter.post("/:id/what-changed", async (req, res) => {
   } catch (error: any) {
     console.error("[What Changed] Error:", error);
     res.status(500).json({ error: error.message || "Failed to generate what changed summary" });
+  }
+});
+
+// Delete analysis
+analysesRouter.delete("/:id", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const analysis = await storage.getAnalysis(req.params.id);
+    if (!analysis) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    // Check if user owns this analysis
+    if (analysis.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Delete the analysis (this should cascade delete related data in a real DB)
+    const deleted = await storage.deleteAnalysis(req.params.id);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    res.json({ success: true, message: "Analysis deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting analysis:", error);
+    res.status(500).json({ error: "Failed to delete analysis" });
   }
 });

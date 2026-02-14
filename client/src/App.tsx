@@ -13,6 +13,7 @@ import Dashboard from "@/pages/dashboard";
 import Analyze from "@/pages/analyze";
 import Command from "@/pages/command";
 import Memory from "@/pages/memory";
+import CalendarPage from "@/pages/calendar";
 import Settings from "@/pages/settings";
 import Profile from "@/pages/profile";
 import Preferences from "@/pages/preferences";
@@ -68,6 +69,13 @@ function Router() {
         <ProtectedRoute>
           <AppLayout>
             <Memory />
+          </AppLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/calendar">
+        <ProtectedRoute>
+          <AppLayout>
+            <CalendarPage />
           </AppLayout>
         </ProtectedRoute>
       </Route>

@@ -3,21 +3,52 @@
 const API_BASE = "/api";
 
 async function fetchAPI(endpoint: string, options: RequestInit = {}) {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    credentials: "include",
-  });
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+      credentials: "include",
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(error.error || "Request failed");
+    // Log the response for debugging
+    console.log(`[API] ${options.method || 'GET'} ${endpoint}:`, response.status, response.statusText);
+
+    if (!response.ok) {
+      // Try to parse error as JSON, fallback to text
+      let errorMessage = "Request failed";
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        // If JSON parsing fails, try to get text
+        try {
+          const errorText = await response.text();
+          console.error('[API] Error response (text):', errorText);
+          errorMessage = errorText || errorMessage;
+        } catch (textError) {
+          console.error('[API] Could not parse error response');
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    // Try to parse response as JSON
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      return response.json();
+    } else {
+      // If not JSON, get the text to see what we're receiving
+      const text = await response.text();
+      console.error('[API] Received non-JSON response:', text.substring(0, 200));
+      throw new Error("Server returned non-JSON response");
+    }
+  } catch (error) {
+    console.error('[API] Fetch error:', error);
+    throw error;
   }
-
-  return response.json();
 }
 
 // Auth
@@ -144,4 +175,41 @@ export const approvals = {
       method: "POST", 
       body: JSON.stringify({ reason }) 
     }),
+};
+
+// Calendar
+export const calendar = {
+  getByProject: (projectId: string) =>
+    fetchAPI(`/calendar/project/${projectId}`),
+  
+  getByDateRange: (projectId: string, start: string, end: string) =>
+    fetchAPI(`/calendar/project/${projectId}/range?start=${start}&end=${end}`),
+  
+  getUpcoming: (projectId: string, limit = 10) =>
+    fetchAPI(`/calendar/project/${projectId}/upcoming?limit=${limit}`),
+  
+  get: (id: string) =>
+    fetchAPI(`/calendar/${id}`),
+  
+  create: (data: {
+    projectId: string;
+    title: string;
+    description?: string;
+    eventType: string;
+    startDate: string;
+    endDate?: string;
+    allDay?: boolean;
+    location?: string;
+    attendees?: string[];
+    relatedAnalysisId?: string;
+    relatedActionItemId?: string;
+    reminderMinutes?: number;
+  }) =>
+    fetchAPI("/calendar", { method: "POST", body: JSON.stringify(data) }),
+  
+  update: (id: string, data: Partial<any>) =>
+    fetchAPI(`/calendar/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  
+  delete: (id: string) =>
+    fetchAPI(`/calendar/${id}`, { method: "DELETE" }),
 };

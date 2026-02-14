@@ -1,6 +1,10 @@
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -16,9 +20,17 @@ import {
   Ban,
   TrendingUp,
   Loader2,
+  Trash2,
+  Edit,
+  Eye,
+  FileText,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { dashboard } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { dashboard, analyses } from "@/lib/api";
+import { useProject } from "@/hooks/use-project";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+import { useLocation } from "wouter";
 
 function SeverityBadge({ severity }: { severity: "High" | "Med" | "Low" }) {
   const variants: Record<string, string> = {
@@ -74,6 +86,14 @@ function MiniSparkline({ data }: { data: number[] }) {
 }
 
 export default function Dashboard() {
+  const { selectedProjectId } = useProject();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [selectedAnalysis, setSelectedAnalysis] = useState<any>(null);
+  const [analysisName, setAnalysisName] = useState("");
+
   // Fetch real data from backend
   const { data: metrics, isLoading: metricsLoading } = useQuery({
     queryKey: ["dashboard-metrics"],
@@ -89,6 +109,51 @@ export default function Dashboard() {
     queryKey: ["recent-runs"],
     queryFn: () => dashboard.recentRuns(10),
   });
+
+  // Fetch saved analyses for selected project
+  const { data: savedAnalyses, isLoading: analysesLoading } = useQuery({
+    queryKey: ["saved-analyses", selectedProjectId],
+    queryFn: () => selectedProjectId ? analyses.getByProject(selectedProjectId) : [],
+    enabled: !!selectedProjectId,
+  });
+
+  // Delete analysis mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => 
+      fetch(`/api/analyses/${id}`, { 
+        method: "DELETE",
+        credentials: "include" 
+      }).then(res => {
+        if (!res.ok) throw new Error("Failed to delete");
+        return res.json();
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["saved-analyses"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-runs"] });
+      toast({ title: "Analysis Deleted", description: "The analysis has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete analysis", variant: "destructive" });
+    },
+  });
+
+  const handleDelete = (analysis: any) => {
+    if (confirm(`Delete analysis from ${new Date(analysis.createdAt).toLocaleDateString()}?`)) {
+      deleteMutation.mutate(analysis.id);
+    }
+  };
+
+  const handleRename = (analysis: any) => {
+    setSelectedAnalysis(analysis);
+    setAnalysisName(analysis.name || `Analysis ${new Date(analysis.createdAt).toLocaleDateString()}`);
+    setRenameDialogOpen(true);
+  };
+
+  const handleView = (analysis: any) => {
+    // Store the analysis ID in sessionStorage and navigate to analyze page
+    sessionStorage.setItem('viewAnalysisId', analysis.id);
+    setLocation('/analyze');
+  };
 
   const metricCards = [
     {
@@ -260,6 +325,148 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
+
+        {/* Saved Analyses Section */}
+        {selectedProjectId && (
+          <Card data-testid="card-saved-analyses">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Saved Analyses</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    All analyses for the selected project
+                  </p>
+                </div>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {analysesLoading ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Loading analyses...</p>
+                </div>
+              ) : savedAnalyses && savedAnalyses.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Date</TableHead>
+                      <TableHead className="text-xs">Type</TableHead>
+                      <TableHead className="text-xs">Decisions</TableHead>
+                      <TableHead className="text-xs">Risks</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="text-xs text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {savedAnalyses.map((analysis: any) => (
+                      <TableRow key={analysis.id} data-testid={`row-analysis-${analysis.id}`}>
+                        <TableCell className="text-sm font-mono text-muted-foreground">
+                          {new Date(analysis.createdAt).toLocaleDateString()}
+                          <br />
+                          <span className="text-xs">
+                            {new Date(analysis.createdAt).toLocaleTimeString([], { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-[11px]">
+                            {analysis.inputType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-center">
+                          {analysis.decisionsCount || 0}
+                        </TableCell>
+                        <TableCell className="text-sm text-center">
+                          {analysis.risksCount || 0}
+                        </TableCell>
+                        <TableCell className="text-sm text-center">
+                          {analysis.actionItemsCount || 0}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={analysis.status} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleView(analysis)}
+                              title="View analysis"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleRename(analysis)}
+                              title="Rename analysis"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(analysis)}
+                              disabled={deleteMutation.isPending}
+                              title="Delete analysis"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No saved analyses yet. Run an analysis to see it here!
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Rename Dialog */}
+        <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rename Analysis</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="analysis-name">Analysis Name</Label>
+                <Input
+                  id="analysis-name"
+                  value={analysisName}
+                  onChange={(e) => setAnalysisName(e.target.value)}
+                  placeholder="Enter a name for this analysis"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => {
+                toast({ 
+                  title: "Coming Soon", 
+                  description: "Analysis renaming will be available soon!" 
+                });
+                setRenameDialogOpen(false);
+              }}>
+                Save Name
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
