@@ -4,213 +4,230 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Terminal,
-  Mic,
-  Send,
-  Zap,
-  CheckCircle2,
-  Pencil,
-  Loader2,
-} from "lucide-react";
-import { commandSuggestions, commandResponse } from "@/lib/mock-data";
+import { command } from "@/lib/api";
+import { Send, Loader2, Sparkles, ArrowRight, Mic, MicOff } from "lucide-react";
+
+const SUGGESTED_COMMANDS = [
+  "What are my top risks this week?",
+  "Generate weekly status update",
+  "Create Jira stories from last run",
+  "What changed since last week?",
+  "Who is blocked and why?",
+];
 
 export default function Command() {
   const { toast } = useToast();
-  const [command, setCommand] = useState("");
-  const [showResponse, setShowResponse] = useState(false);
+  const [commandText, setCommandText] = useState("");
+  const [isExecuting, setIsExecuting] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedActions, setSelectedActions] = useState<Record<string, boolean>>(
-    Object.fromEntries(commandResponse.actions.map((a) => [a.id, a.selected]))
-  );
+  const [result, setResult] = useState<any>(null);
+  const [history, setHistory] = useState<Array<{ command: string; result: any }>>([]);
 
-  const handleSend = (text?: string) => {
-    const cmd = text || command;
-    if (!cmd.trim()) return;
-    setCommand(cmd);
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setShowResponse(true);
-    }, 1200);
+  const handleExecute = async (cmd?: string) => {
+    const commandToExecute = cmd || commandText;
+    if (!commandToExecute.trim()) return;
+
+    setIsExecuting(true);
+    setCommandText("");
+    
+    try {
+      const response = await command.execute({
+        command: commandToExecute,
+        projectId: "default-project", // TODO: Get from context
+      });
+      
+      setResult(response);
+      setHistory([{ command: commandToExecute, result: response }, ...history]);
+      toast({ title: "Command Executed", description: "Response generated successfully." });
+    } catch (error: any) {
+      toast({ title: "Command Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
-  const handleVoice = () => {
-    setIsListening(true);
-    setTimeout(() => {
+  const handleVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast({
+        title: "Not Supported",
+        description: "Voice input is not supported in your browser. Try Chrome or Edge.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      toast({ title: "Listening...", description: "Speak your command now" });
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setCommandText(transcript);
+      toast({ title: "Got it!", description: `Heard: "${transcript}"` });
+    };
+
+    recognition.onerror = (event: any) => {
       setIsListening(false);
-      setCommand("What are my top risks this week?");
-      toast({ title: "Voice captured", description: "Command recognized. Press Send to execute." });
-    }, 2000);
+      toast({
+        title: "Voice Input Error",
+        description: event.error === 'no-speech' ? "No speech detected" : "Could not recognize speech",
+        variant: "destructive",
+      });
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
   };
 
   return (
     <div className="flex flex-col h-full">
       <AppHeader title="Command Mode" />
       <div className="flex-1 overflow-auto p-6 space-y-6">
-        <div className="max-w-3xl mx-auto space-y-6">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-medium">
-              <Zap className="h-3.5 w-3.5" />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
               Ask ActionLayer
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Type a command or use voice input to interact with your project data.
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Use natural language or voice to query your projects, generate reports, or execute actions
             </p>
-          </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Type your command or use voice input..."
+                value={commandText}
+                onChange={(e) => setCommandText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !isExecuting && handleExecute()}
+                disabled={isExecuting || isListening}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleVoiceInput}
+                disabled={isExecuting || isListening}
+                variant={isListening ? "destructive" : "outline"}
+                size="icon"
+                title="Voice input"
+              >
+                {isListening ? <MicOff className="h-4 w-4 animate-pulse" /> : <Mic className="h-4 w-4" />}
+              </Button>
+              <Button onClick={() => handleExecute()} disabled={isExecuting || !commandText.trim() || isListening} className="gap-2">
+                {isExecuting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {isExecuting ? "Executing..." : "Send"}
+              </Button>
+            </div>
 
-          <Card data-testid="card-command-input">
-            <CardContent className="p-4 space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  placeholder="Type a command... e.g. 'What are my top risks?'"
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  className="flex-1"
-                  data-testid="input-command"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleVoice}
-                  disabled={isListening}
-                  data-testid="button-voice"
-                >
-                  {isListening ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mic className="h-4 w-4" />
-                  )}
-                </Button>
-                <Button onClick={() => handleSend()} disabled={isProcessing} data-testid="button-send-command">
-                  {isProcessing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
+            {isListening && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+                <Mic className="h-4 w-4 text-destructive animate-pulse" />
+                <span className="text-sm text-destructive font-medium">Listening... Speak now</span>
               </div>
-              {isListening && (
-                <div className="flex items-center gap-2 text-sm text-primary animate-pulse">
-                  <Mic className="h-4 w-4" />
-                  Listening... Speak your command.
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2" data-testid="command-suggestions">
-                {commandSuggestions.map((suggestion) => (
+            )}
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Suggested commands:</p>
+              <div className="flex flex-wrap gap-2">
+                {SUGGESTED_COMMANDS.map((cmd, i) => (
                   <Button
-                    key={suggestion}
+                    key={i}
                     variant="outline"
                     size="sm"
+                    onClick={() => handleExecute(cmd)}
+                    disabled={isExecuting || isListening}
                     className="text-xs"
-                    onClick={() => handleSend(suggestion)}
-                    data-testid={`chip-suggestion-${suggestion.slice(0, 10).replace(/\s+/g, "-").toLowerCase()}`}
                   >
-                    {suggestion}
+                    {cmd}
                   </Button>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-          {isProcessing && (
-            <Card>
-              <CardContent className="p-6 flex items-center justify-center gap-3">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                <span className="text-sm text-muted-foreground">Processing your command...</span>
-              </CardContent>
-            </Card>
-          )}
+        {result && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Response</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {result.intent && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Intent</p>
+                  <Badge variant="secondary">{result.intent}</Badge>
+                </div>
+              )}
 
-          {showResponse && !isProcessing && (
-            <div className="space-y-4">
-              <Card data-testid="card-interpreted-intent">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="h-4 w-4 text-primary" />
-                    <CardTitle className="text-sm">Interpreted Intent</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <Badge className="bg-primary/10 text-primary border-primary/20" variant="outline" data-testid="badge-intent">
-                    {commandResponse.intent}
-                  </Badge>
-                </CardContent>
-              </Card>
-
-              <Card data-testid="card-proposed-plan">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Proposed Plan</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ol className="space-y-2">
-                    {commandResponse.plan.map((step, i) => (
-                      <li key={i} className="flex items-start gap-3 text-sm">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[11px] font-medium shrink-0 mt-0.5">
-                          {i + 1}
-                        </span>
+              {result.plan && result.plan.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Plan</p>
+                  <ol className="space-y-1">
+                    {result.plan.map((step: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <span className="text-primary font-medium">{i + 1}.</span>
                         <span>{step}</span>
                       </li>
                     ))}
                   </ol>
-                </CardContent>
-              </Card>
+                </div>
+              )}
 
-              <Card data-testid="card-proposed-actions">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Proposed Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {commandResponse.actions.map((action) => (
-                    <div
-                      key={action.id}
-                      className="flex items-center gap-3 p-3 rounded-md bg-accent/30"
-                      data-testid={`command-action-${action.id}`}
-                    >
-                      <Checkbox
-                        checked={selectedActions[action.id]}
-                        onCheckedChange={(checked) =>
-                          setSelectedActions({ ...selectedActions, [action.id]: !!checked })
-                        }
-                      />
-                      <span className="text-sm flex-1">{action.action}</span>
-                    </div>
-                  ))}
-                  <div className="flex gap-2 pt-2 flex-wrap">
-                    <Button
-                      className="gap-1.5"
-                      onClick={() => toast({ title: "Approved", description: "Actions queued for execution." })}
-                      data-testid="button-approve-command"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      Approve
-                    </Button>
-                    <Button variant="outline" className="gap-1.5" data-testid="button-edit-command">
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Button>
+              {result.response && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Response</p>
+                  <div className="rounded-md bg-accent/30 p-4">
+                    <p className="text-sm whitespace-pre-wrap">{result.response}</p>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+                </div>
+              )}
 
-          {!showResponse && !isProcessing && (
-            <div className="text-center py-12">
-              <Terminal className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">
-                No commands yet. Try asking something or pick a suggestion above.
-              </p>
-              <p className="text-xs text-muted-foreground/60 mt-1 italic">
-                "Great PMs don't just track work \u2014 they command it."
-              </p>
-            </div>
-          )}
-        </div>
+              {result.actions && result.actions.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Proposed Actions</p>
+                  <div className="space-y-2">
+                    {result.actions.map((action: any, i: number) => (
+                      <div key={i} className="flex items-center gap-2 p-3 rounded-md bg-accent/30">
+                        <ArrowRight className="h-4 w-4 text-primary shrink-0" />
+                        <span className="text-sm">{action.action}</span>
+                        <Badge variant="outline" className="ml-auto text-[10px]">{action.type}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {history.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Command History</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {history.map((item, i) => (
+                <div key={i} className="border-b last:border-0 pb-3 last:pb-0">
+                  <p className="text-sm font-medium mb-1">{item.command}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {item.result.intent || "Executed"}
+                  </p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
