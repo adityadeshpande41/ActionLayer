@@ -134,7 +134,10 @@ export function AppHeader({ title }: AppHeaderProps) {
 
       const newProject = await response.json();
       
-      // Refresh projects list by invalidating the query
+      // Store the new project ID to select it after reload
+      localStorage.setItem("selectProjectAfterReload", newProject.id);
+      
+      // Refresh projects list by reloading
       window.location.reload();
       
       toast({

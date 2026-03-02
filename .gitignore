@@ -23,3 +23,14 @@ uploads/*.md
 # Database
 *.db
 *.sqlite
+
+
+# Google Calendar credentials
+google-credentials.json
+google-token.json
+
+# Jira configuration
+jira-config.json
+
+# OAuth client secrets
+client_secret_*.json

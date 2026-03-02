@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useProject } from "@/hooks/use-project";
-import { analyses, approvals, calendar } from "@/lib/api";
+import { analyses, approvals, calendar, jira } from "@/lib/api";
 import { Upload, Play, Loader2, AlertTriangle, CheckCircle2, Ban, Copy, MessageSquare, ChevronRight, Lightbulb, ArrowRight, FileText, Mail, TrendingUp, Calendar as CalendarIcon } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -236,10 +236,88 @@ export default function Analyze() {
     
     setIsGeneratingJira(true);
     try {
+      // Check Jira connection status
+      const jiraStatus = await jira.getStatus();
+      
+      if (!jiraStatus.configured) {
+        toast({ 
+          title: "Jira Not Connected", 
+          description: "Please configure Jira integration first. Contact your admin to set up Jira credentials.",
+          variant: "destructive" 
+        });
+        setIsGeneratingJira(false);
+        return;
+      }
+
+      // Generate Jira stories (AI drafts)
       const result = await analyses.generateJira(analysisResult.id);
-      // Backend returns { jiraDrafts }, map it to { stories }
       setJiraStories({ stories: result.jiraDrafts });
-      toast({ title: "Jira Stories Generated", description: "AI-generated tickets are ready." });
+      
+      // Ask user if they want to create tickets in Jira
+      const shouldCreate = confirm(
+        `Generated ${result.jiraDrafts.length} Jira stories. Do you want to create these tickets in your Jira project now?`
+      );
+      
+      if (shouldCreate) {
+        // Get Jira projects to let user select
+        const projects = await jira.getProjects();
+        
+        if (projects.length === 0) {
+          toast({ 
+            title: "No Jira Projects", 
+            description: "No Jira projects found. Please create a project in Jira first.",
+            variant: "destructive" 
+          });
+          return;
+        }
+        
+        // Use first project or let user select (for now, using first)
+        const projectKey = projects[0].key;
+        
+        // Create tickets in Jira
+        let createdCount = 0;
+        for (const story of result.jiraDrafts) {
+          try {
+            await jira.createIssue({
+              fields: {
+                project: { key: projectKey },
+                summary: story.title,
+                description: {
+                  type: "doc",
+                  version: 1,
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: story.description || "" }]
+                    },
+                    {
+                      type: "heading",
+                      attrs: { level: 3 },
+                      content: [{ type: "text", text: "Acceptance Criteria" }]
+                    },
+                    ...(story.acceptanceCriteria || []).map((ac: string) => ({
+                      type: "paragraph",
+                      content: [{ type: "text", text: `• ${ac}` }]
+                    }))
+                  ]
+                },
+                issuetype: { name: story.type === "epic" ? "Epic" : "Story" },
+                priority: { name: story.priority === "high" ? "High" : story.priority === "low" ? "Low" : "Medium" }
+              }
+            });
+            createdCount++;
+          } catch (error) {
+            console.error("Failed to create Jira ticket:", error);
+          }
+        }
+        
+        toast({ 
+          title: "Jira Tickets Created", 
+          description: `Successfully created ${createdCount} of ${result.jiraDrafts.length} tickets in Jira project ${projectKey}.` 
+        });
+      } else {
+        toast({ title: "Jira Stories Generated", description: "AI-generated tickets are ready for review." });
+      }
     } catch (error: any) {
       toast({ title: "Generation Failed", description: error.message, variant: "destructive" });
     } finally {

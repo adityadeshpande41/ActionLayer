@@ -47,6 +47,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // Auto-select first project if none selected
   useEffect(() => {
     if (projects.length > 0 && !selectedProjectId) {
+      // Check if we should select a specific project after reload
+      const projectToSelect = localStorage.getItem("selectProjectAfterReload");
+      if (projectToSelect) {
+        localStorage.removeItem("selectProjectAfterReload");
+        const projectExists = projects.find((p: any) => p.id === projectToSelect);
+        if (projectExists) {
+          setSelectedProjectId(projectToSelect);
+          return;
+        }
+      }
+      // Otherwise select the first project
       setSelectedProjectId(projects[0].id);
     }
   }, [projects, selectedProjectId]);

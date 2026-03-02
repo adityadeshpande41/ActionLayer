@@ -10,6 +10,7 @@ import { dashboardRouter } from "./routes/dashboard";
 import { approvalsRouter } from "./routes/approvals";
 import { initRouter } from "./routes/init";
 import { calendarRouter } from "./routes/calendar";
+import { jiraRouter } from "./routes/jira";
 
 // Session middleware
 const sessionMiddleware = session({
@@ -68,6 +69,7 @@ export async function registerRoutes(
   app.use("/api/approvals", requireAuth, approvalsRouter);
   app.use("/api/init", requireAuth, initRouter);
   app.use("/api/calendar", requireAuth, calendarRouter);
+  app.use("/api/jira", requireAuth, jiraRouter);
 
   // Health check
   app.get("/api/health", (req, res) => {

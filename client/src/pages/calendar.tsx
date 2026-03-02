@@ -24,6 +24,47 @@ export default function CalendarPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<any>(null);
 
+  // Google Calendar status
+  const { data: googleStatus } = useQuery({
+    queryKey: ["google-calendar-status"],
+    queryFn: () => fetch("/api/calendar/google/status").then(r => r.json()),
+  });
+
+  const handleConnectGoogle = () => {
+    if (googleStatus?.authUrl) {
+      window.location.href = googleStatus.authUrl;
+    }
+  };
+
+  // Import from Google Calendar mutation
+  const importGoogleMutation = useMutation({
+    mutationFn: (clearExisting: boolean = false) => {
+      if (!selectedProjectId) throw new Error("No project selected");
+      const start = startOfMonth(selectedDate);
+      const end = endOfMonth(selectedDate);
+      return fetch(`/api/calendar/google/import/${selectedProjectId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          clearExisting,
+        }),
+      }).then(r => r.json());
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["upcoming-events"] });
+      toast({ 
+        title: "Import Complete", 
+        description: `Imported ${data.imported} of ${data.total} events from Google Calendar.` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Import Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   // Form state
   const [formData, setFormData] = useState({
     title: "",
@@ -215,7 +256,32 @@ export default function CalendarPage() {
               Manage meetings, deadlines, and milestones
             </p>
           </div>
-          <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+          <div className="flex gap-2">
+            {googleStatus?.configured ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => importGoogleMutation.mutate(true)}
+                  disabled={importGoogleMutation.isPending || !selectedProjectId}
+                >
+                  {importGoogleMutation.isPending ? "Importing..." : "Sync Google Calendar"}
+                </Button>
+                <Badge variant="secondary" className="px-3 py-1">
+                  ✓ Connected
+                </Badge>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleConnectGoogle}
+                disabled={!googleStatus?.authUrl}
+              >
+                Connect Google Calendar
+              </Button>
+            )}
+            <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
             setIsCreateDialogOpen(open);
             if (!open) {
               setEditingEvent(null);
@@ -380,6 +446,7 @@ export default function CalendarPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

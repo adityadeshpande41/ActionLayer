@@ -154,3 +154,194 @@ calendarRouter.delete("/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to delete calendar event" });
   }
 });
+
+// Google Calendar Integration
+import { googleCalendarService } from "../services/google-calendar";
+
+// Check if Google Calendar is configured
+calendarRouter.get("/google/status", (req, res) => {
+  res.json({
+    configured: googleCalendarService.isConfigured(),
+    authUrl: googleCalendarService.getAuthUrl(),
+  });
+});
+
+// Handle OAuth callback (GET request from Google redirect)
+calendarRouter.get("/google/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).send("Authorization code required");
+    }
+
+    const success = await googleCalendarService.handleAuthCallback(code);
+    if (success) {
+      // Redirect to calendar page with success message
+      res.redirect("/calendar?google_connected=true");
+    } else {
+      res.redirect("/calendar?google_error=auth_failed");
+    }
+  } catch (error) {
+    console.error("Error handling Google auth:", error);
+    res.redirect("/calendar?google_error=auth_failed");
+  }
+});
+
+// Handle OAuth callback (POST for manual code submission)
+calendarRouter.post("/google/auth", async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ error: "Authorization code required" });
+    }
+
+    const success = await googleCalendarService.handleAuthCallback(code);
+    if (success) {
+      res.json({ success: true, message: "Google Calendar connected successfully" });
+    } else {
+      res.status(500).json({ error: "Failed to authenticate with Google Calendar" });
+    }
+  } catch (error) {
+    console.error("Error handling Google auth:", error);
+    res.status(500).json({ error: "Failed to authenticate with Google Calendar" });
+  }
+});
+
+// Sync event to Google Calendar
+calendarRouter.post("/:id/sync-to-google", async (req, res) => {
+  try {
+    if (!googleCalendarService.isConfigured()) {
+      return res.status(400).json({ error: "Google Calendar not configured" });
+    }
+
+    const event = await storage.getCalendarEvent(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    // Convert and create in Google Calendar
+    const googleEvent = googleCalendarService.convertToGoogleEvent(event);
+    const createdEvent = await googleCalendarService.createEvent(googleEvent);
+
+    // Store Google Calendar event ID
+    await storage.updateCalendarEvent(req.params.id, {
+      // We could add a googleCalendarId field to the schema
+      description: event.description 
+        ? `${event.description}\n\n[Google Calendar ID: ${createdEvent.id}]`
+        : `[Google Calendar ID: ${createdEvent.id}]`,
+    });
+
+    res.json({
+      success: true,
+      googleEventId: createdEvent.id,
+      googleEventLink: createdEvent.htmlLink,
+    });
+  } catch (error: any) {
+    console.error("Error syncing to Google Calendar:", error);
+    res.status(500).json({ error: error.message || "Failed to sync to Google Calendar" });
+  }
+});
+
+// Import events from Google Calendar
+calendarRouter.post("/google/import/:projectId", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!googleCalendarService.isConfigured()) {
+      return res.status(400).json({ error: "Google Calendar not configured" });
+    }
+
+    const { startDate, endDate, clearExisting } = req.body;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: "Start and end dates required" });
+    }
+
+    // Clear existing imported events if requested
+    if (clearExisting) {
+      const existingEvents = await storage.getCalendarEventsByDateRange(
+        req.params.projectId,
+        new Date(startDate),
+        new Date(endDate)
+      );
+      
+      // Delete all events in the range (we'll re-import everything)
+      for (const event of existingEvents) {
+        await storage.deleteCalendarEvent(event.id);
+      }
+      console.log(`[Google Calendar Import] Cleared ${existingEvents.length} existing events`);
+    }
+
+    // Fetch events from Google Calendar
+    const googleEvents = await googleCalendarService.listEvents(
+      new Date(startDate),
+      new Date(endDate)
+    );
+
+    // Import events to ActionLayer
+    const importedEvents = [];
+    for (const gEvent of googleEvents) {
+      try {
+        // Clean up description - remove HTML tags and extract plain text
+        let cleanDescription = gEvent.description || "";
+        
+        if (cleanDescription) {
+          // Remove HTML tags completely
+          cleanDescription = cleanDescription.replace(/<[^>]*>/g, "");
+          // Decode HTML entities
+          cleanDescription = cleanDescription
+            .replace(/&nbsp;/g, " ")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&amp;/g, "&")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&apos;/g, "'");
+          // Remove multiple spaces, newlines, and trim
+          cleanDescription = cleanDescription
+            .replace(/\s+/g, " ")
+            .replace(/\n+/g, " ")
+            .trim();
+          // Limit length
+          if (cleanDescription.length > 300) {
+            cleanDescription = cleanDescription.substring(0, 297) + "...";
+          }
+        }
+        
+        // Add import marker at the end
+        const importMarker = `[Google Calendar: ${gEvent.id}]`;
+        cleanDescription = cleanDescription 
+          ? `${cleanDescription} ${importMarker}`
+          : importMarker;
+        
+        const event = await storage.createCalendarEvent({
+          projectId: req.params.projectId,
+          userId,
+          title: gEvent.summary || "Untitled Event",
+          description: cleanDescription,
+          eventType: "meeting",
+          startDate: new Date(gEvent.start.dateTime || gEvent.start.date),
+          endDate: gEvent.end ? new Date(gEvent.end.dateTime || gEvent.end.date) : undefined,
+          allDay: !!gEvent.start.date,
+          location: gEvent.location,
+          status: "scheduled",
+        });
+        importedEvents.push(event);
+      } catch (error) {
+        console.error(`Failed to import event ${gEvent.id}:`, error);
+      }
+    }
+
+    res.json({
+      success: true,
+      imported: importedEvents.length,
+      total: googleEvents.length,
+      events: importedEvents,
+    });
+  } catch (error: any) {
+    console.error("Error importing from Google Calendar:", error);
+    res.status(500).json({ error: error.message || "Failed to import from Google Calendar" });
+  }
+});

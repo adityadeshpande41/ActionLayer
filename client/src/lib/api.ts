@@ -212,4 +212,56 @@ export const calendar = {
   
   delete: (id: string) =>
     fetchAPI(`/calendar/${id}`, { method: "DELETE" }),
+
+  // Google Calendar integration
+  getGoogleStatus: () =>
+    fetchAPI("/calendar/google/status"),
+
+  connectGoogle: (code: string) =>
+    fetchAPI("/calendar/google/auth", { method: "POST", body: JSON.stringify({ code }) }),
+
+  syncToGoogle: (eventId: string) =>
+    fetchAPI(`/calendar/${eventId}/sync-to-google`, { method: "POST" }),
+
+  importFromGoogle: (projectId: string, startDate: string, endDate: string) =>
+    fetchAPI(`/calendar/google/import/${projectId}`, {
+      method: "POST",
+      body: JSON.stringify({ startDate, endDate }),
+    }),
+};
+
+// Jira Integration
+export const jira = {
+  getStatus: () =>
+    fetchAPI("/jira/status"),
+
+  saveConfig: (data: { baseUrl: string; email: string; apiToken: string }) =>
+    fetchAPI("/jira/config", { method: "POST", body: JSON.stringify(data) }),
+
+  testConnection: () =>
+    fetchAPI("/jira/test"),
+
+  getProjects: () =>
+    fetchAPI("/jira/projects"),
+
+  getIssueTypes: (projectKey: string) =>
+    fetchAPI(`/jira/projects/${projectKey}/issue-types`),
+
+  createIssue: (data: any) =>
+    fetchAPI("/jira/issues", { method: "POST", body: JSON.stringify(data) }),
+
+  getIssue: (issueKey: string) =>
+    fetchAPI(`/jira/issues/${issueKey}`),
+
+  updateIssue: (issueKey: string, fields: any) =>
+    fetchAPI(`/jira/issues/${issueKey}`, { 
+      method: "PUT", 
+      body: JSON.stringify({ fields }) 
+    }),
+
+  searchIssues: (jql: string, maxResults = 50) =>
+    fetchAPI("/jira/search", { 
+      method: "POST", 
+      body: JSON.stringify({ jql, maxResults }) 
+    }),
 };
