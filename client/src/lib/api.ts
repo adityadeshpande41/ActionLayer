@@ -217,6 +217,9 @@ export const calendar = {
   getGoogleStatus: () =>
     fetchAPI("/calendar/google/status"),
 
+  disconnectGoogle: () =>
+    fetchAPI("/calendar/google/disconnect", { method: "POST" }),
+
   connectGoogle: (code: string) =>
     fetchAPI("/calendar/google/auth", { method: "POST", body: JSON.stringify({ code }) }),
 
@@ -228,6 +231,9 @@ export const calendar = {
       method: "POST",
       body: JSON.stringify({ startDate, endDate }),
     }),
+
+  removeDuplicates: (projectId: string) =>
+    fetchAPI(`/calendar/remove-duplicates/${projectId}`, { method: "POST" }),
 };
 
 // Jira Integration

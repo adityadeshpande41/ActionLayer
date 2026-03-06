@@ -65,6 +65,37 @@ export default function CalendarPage() {
     },
   });
 
+  // Disconnect Google Calendar mutation
+  const disconnectGoogleMutation = useMutation({
+    mutationFn: () => calendar.disconnectGoogle(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["google-calendar-status"] });
+      toast({ title: "Disconnected", description: "Google Calendar has been disconnected." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Remove duplicates mutation
+  const removeDuplicatesMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedProjectId) throw new Error("No project selected");
+      return calendar.removeDuplicates(selectedProjectId);
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["upcoming-events"] });
+      toast({ 
+        title: "Duplicates Removed", 
+        description: `Removed ${data.deletedCount} duplicate events.` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   // Form state
   const [formData, setFormData] = useState({
     title: "",
@@ -266,6 +297,26 @@ export default function CalendarPage() {
                   disabled={importGoogleMutation.isPending || !selectedProjectId}
                 >
                   {importGoogleMutation.isPending ? "Importing..." : "Sync Google Calendar"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeDuplicatesMutation.mutate()}
+                  disabled={removeDuplicatesMutation.isPending || !selectedProjectId}
+                >
+                  Remove Duplicates
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm("Disconnect Google Calendar? You can reconnect anytime.")) {
+                      disconnectGoogleMutation.mutate();
+                    }
+                  }}
+                  disabled={disconnectGoogleMutation.isPending}
+                >
+                  Disconnect
                 </Button>
                 <Badge variant="secondary" className="px-3 py-1">
                   ✓ Connected

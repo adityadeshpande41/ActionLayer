@@ -72,6 +72,24 @@ class GoogleCalendarService {
     return this.oauth2Client !== null && this.calendar !== null;
   }
 
+  disconnect(): boolean {
+    try {
+      // Remove token file
+      if (fs.existsSync(TOKEN_PATH)) {
+        fs.unlinkSync(TOKEN_PATH);
+      }
+      
+      // Reset client
+      this.calendar = null;
+      
+      console.log("[Google Calendar] Disconnected successfully");
+      return true;
+    } catch (error) {
+      console.error("[Google Calendar] Disconnect error:", error);
+      return false;
+    }
+  }
+
   getAuthUrl(): string | null {
     if (!this.oauth2Client) return null;
 

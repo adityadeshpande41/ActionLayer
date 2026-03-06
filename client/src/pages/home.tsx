@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +13,30 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   const [loginData, setLoginData] = useState({ username: "", password: "" });
   const [registerData, setRegisterData] = useState({ username: "", password: "", email: "" });
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        await auth.me();
+        // User is logged in, redirect to dashboard
+        setLocation("/dashboard");
+      } catch (error) {
+        // User is not logged in, show landing page
+        setIsCheckingAuth(false);
+      }
+    };
+    checkAuth();
+  }, [setLocation]);
+
+  // Show nothing while checking auth
+  if (isCheckingAuth) {
+    return null;
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +95,7 @@ export default function Home() {
             </div>
             
             <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
-              <span className="bg-gradient-to-r from-primary via-primary to-highlight bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-primary via-purple-500 to-highlight bg-clip-text text-transparent animate-gradient bg-[length:200%_auto]">
                 ActionLayer
               </span>
             </h1>
@@ -85,7 +106,7 @@ export default function Home() {
             
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto mt-6">
               Transform meeting conversations into actionable intelligence. 
-              Extract decisions, track risks, detect drift, and automate execution—with human-in-the-loop control.
+              Extract decisions, track risks, detect drift, and automate execution, with human-in-the-loop control.
             </p>
           </div>
 
@@ -232,7 +253,7 @@ export default function Home() {
 
           {/* Footer */}
           <div className="text-center mt-16 text-sm text-muted-foreground">
-            <p>Powered by OpenAI GPT-4 • Built for Product Managers</p>
+            <p>Powered by AI • Built for Project Managers</p>
           </div>
         </div>
       </div>

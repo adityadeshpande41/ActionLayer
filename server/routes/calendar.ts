@@ -166,6 +166,21 @@ calendarRouter.get("/google/status", (req, res) => {
   });
 });
 
+// Disconnect Google Calendar
+calendarRouter.post("/google/disconnect", (req, res) => {
+  try {
+    const success = googleCalendarService.disconnect();
+    if (success) {
+      res.json({ success: true, message: "Google Calendar disconnected successfully" });
+    } else {
+      res.status(500).json({ error: "Failed to disconnect Google Calendar" });
+    }
+  } catch (error: any) {
+    console.error("Error disconnecting Google Calendar:", error);
+    res.status(500).json({ error: error.message || "Failed to disconnect" });
+  }
+});
+
 // Handle OAuth callback (GET request from Google redirect)
 calendarRouter.get("/google/callback", async (req, res) => {
   try {
@@ -239,6 +254,50 @@ calendarRouter.post("/:id/sync-to-google", async (req, res) => {
   } catch (error: any) {
     console.error("Error syncing to Google Calendar:", error);
     res.status(500).json({ error: error.message || "Failed to sync to Google Calendar" });
+  }
+});
+
+// Remove duplicate events
+calendarRouter.post("/remove-duplicates/:projectId", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get all events for the project
+    const events = await storage.getCalendarEventsByProjectId(req.params.projectId);
+    
+    // Group events by title and start date
+    const eventMap = new Map<string, any[]>();
+    for (const event of events) {
+      const key = `${event.title}-${new Date(event.startDate).toISOString()}`;
+      if (!eventMap.has(key)) {
+        eventMap.set(key, []);
+      }
+      eventMap.get(key)!.push(event);
+    }
+    
+    // Delete duplicates (keep the first one)
+    let deletedCount = 0;
+    for (const [key, duplicates] of eventMap.entries()) {
+      if (duplicates.length > 1) {
+        // Keep the first, delete the rest
+        for (let i = 1; i < duplicates.length; i++) {
+          await storage.deleteCalendarEvent(duplicates[i].id);
+          deletedCount++;
+        }
+      }
+    }
+    
+    res.json({
+      success: true,
+      deletedCount,
+      message: `Removed ${deletedCount} duplicate events`,
+    });
+  } catch (error: any) {
+    console.error("Error removing duplicates:", error);
+    res.status(500).json({ error: error.message || "Failed to remove duplicates" });
   }
 });
 
