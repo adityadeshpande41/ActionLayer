@@ -1,7 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
 import { storage } from "./storage";
 import { authRouter } from "./routes/auth";
@@ -13,43 +12,6 @@ import { approvalsRouter } from "./routes/approvals";
 import { initRouter } from "./routes/init";
 import { calendarRouter } from "./routes/calendar";
 import { jiraRouter } from "./routes/jira";
-
-const PgSession = connectPgSimple(session);
-
-// Session store configuration
-const isProduction = process.env.NODE_ENV === "production";
-const databaseUrl = process.env.DATABASE_URL;
-
-let sessionStore: any;
-
-if (isProduction && databaseUrl?.startsWith("postgres")) {
-  // Use PostgreSQL session store in production
-  const pgPool = new pg.Pool({ connectionString: databaseUrl });
-  sessionStore = new PgSession({
-    pool: pgPool,
-    tableName: "session",
-    createTableIfMissing: true,
-  });
-  console.log("[Session] Using PostgreSQL session store");
-} else {
-  // Use memory store in development (default)
-  console.log("[Session] Using memory session store");
-}
-
-// Session middleware
-const sessionMiddleware = session({
-  store: sessionStore,
-  secret: process.env.SESSION_SECRET || "your-secret-key-change-in-production",
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === "production", // Use secure cookies in production
-    httpOnly: true,
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    sameSite: 'lax', // Important for same-site requests
-  },
-  name: 'actionlayer.sid', // Custom session cookie name
-});
 
 // Auth middleware
 async function requireAuth(req: any, res: any, next: any) {
@@ -80,6 +42,46 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Session store configuration
+  const isProduction = process.env.NODE_ENV === "production";
+  const databaseUrl = process.env.DATABASE_URL;
+
+  let sessionStore: any;
+
+  if (isProduction && databaseUrl?.startsWith("postgres")) {
+    // Use PostgreSQL session store in production
+    const { default: connectPgSimple } = await import("connect-pg-simple");
+    const PgSession = connectPgSimple(session);
+    const pgPool = new pg.Pool({ 
+      connectionString: databaseUrl,
+      ssl: { rejectUnauthorized: false }
+    });
+    sessionStore = new PgSession({
+      pool: pgPool,
+      tableName: "session",
+      createTableIfMissing: true,
+    });
+    console.log("[Session] Using PostgreSQL session store");
+  } else {
+    // Use memory store in development (default)
+    console.log("[Session] Using memory session store");
+  }
+
+  // Session middleware
+  const sessionMiddleware = session({
+    store: sessionStore,
+    secret: process.env.SESSION_SECRET || "your-secret-key-change-in-production",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production", // Use secure cookies in production
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      sameSite: 'lax', // Important for same-site requests
+    },
+    name: 'actionlayer.sid', // Custom session cookie name
+  });
+
   // Apply session middleware
   app.use(sessionMiddleware);
 
