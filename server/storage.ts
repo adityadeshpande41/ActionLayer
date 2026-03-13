@@ -838,6 +838,39 @@ export class SqliteStorage implements IStorage {
   }
 
   async getCalendarEventsByDateRange(projectId: string, startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
+    if (isPostgres) {
+      // Use raw SQL for PostgreSQL to avoid timestamp conversion issues
+      const result: any = await (db as any).execute(sql`
+        SELECT * FROM calendar_events
+        WHERE project_id = ${projectId}
+          AND start_date >= ${startDate.toISOString()}::timestamp
+          AND start_date <= ${endDate.toISOString()}::timestamp
+        ORDER BY start_date
+      `);
+      const rows = result.rows || result;
+      
+      return rows.map((event: any) => ({
+        id: event.id,
+        projectId: event.project_id,
+        userId: event.user_id,
+        title: event.title,
+        description: event.description,
+        eventType: event.event_type,
+        startDate: new Date(event.start_date),
+        endDate: event.end_date ? new Date(event.end_date) : null,
+        allDay: event.all_day,
+        location: event.location,
+        attendees: event.attendees,
+        relatedAnalysisId: event.related_analysis_id,
+        relatedActionItemId: event.related_action_item_id,
+        status: event.status,
+        reminderMinutes: event.reminder_minutes,
+        createdAt: new Date(event.created_at),
+        updatedAt: new Date(event.updated_at),
+      })) as CalendarEvent[];
+    }
+    
+    // SQLite path
     const results = await db.select()
       .from(calendarEvents)
       .where(
@@ -849,23 +882,46 @@ export class SqliteStorage implements IStorage {
       )
       .orderBy(calendarEvents.startDate);
     
-    // Convert ISO strings back to Date objects for PostgreSQL
-    if (isPostgres) {
-      return results.map(event => ({
-        ...event,
-        startDate: new Date(event.startDate as any),
-        endDate: event.endDate ? new Date(event.endDate as any) : null,
-        createdAt: new Date(event.createdAt as any),
-        updatedAt: new Date(event.updatedAt as any),
-      })) as CalendarEvent[];
-    }
-    
     return results;
   }
 
   async getUpcomingEvents(projectId: string, limit: number = 10): Promise<CalendarEvent[]> {
     const now = new Date();
     
+    if (isPostgres) {
+      // Use raw SQL for PostgreSQL
+      const result: any = await (db as any).execute(sql`
+        SELECT * FROM calendar_events
+        WHERE project_id = ${projectId}
+          AND start_date >= ${now.toISOString()}::timestamp
+          AND status = 'scheduled'
+        ORDER BY start_date
+        LIMIT ${limit}
+      `);
+      const rows = result.rows || result;
+      
+      return rows.map((event: any) => ({
+        id: event.id,
+        projectId: event.project_id,
+        userId: event.user_id,
+        title: event.title,
+        description: event.description,
+        eventType: event.event_type,
+        startDate: new Date(event.start_date),
+        endDate: event.end_date ? new Date(event.end_date) : null,
+        allDay: event.all_day,
+        location: event.location,
+        attendees: event.attendees,
+        relatedAnalysisId: event.related_analysis_id,
+        relatedActionItemId: event.related_action_item_id,
+        status: event.status,
+        reminderMinutes: event.reminder_minutes,
+        createdAt: new Date(event.created_at),
+        updatedAt: new Date(event.updated_at),
+      })) as CalendarEvent[];
+    }
+    
+    // SQLite path
     const results = await db.select()
       .from(calendarEvents)
       .where(
@@ -877,17 +933,6 @@ export class SqliteStorage implements IStorage {
       )
       .orderBy(calendarEvents.startDate)
       .limit(limit);
-    
-    // Convert ISO strings back to Date objects for PostgreSQL
-    if (isPostgres) {
-      return results.map(event => ({
-        ...event,
-        startDate: new Date(event.startDate as any),
-        endDate: event.endDate ? new Date(event.endDate as any) : null,
-        createdAt: new Date(event.createdAt as any),
-        updatedAt: new Date(event.updatedAt as any),
-      })) as CalendarEvent[];
-    }
     
     return results;
   }
