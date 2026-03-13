@@ -440,7 +440,12 @@ export default function Analyze() {
         console.log('[Schedule] Success:', result);
         return result;
       } catch (error) {
-        console.error('[Schedule] Error:', error);
+        console.error('[Schedule] Error details:', error);
+        // Log the full error object
+        if (error instanceof Error) {
+          console.error('[Schedule] Error message:', error.message);
+          console.error('[Schedule] Error stack:', error.stack);
+        }
         throw error;
       }
     },
@@ -457,9 +462,10 @@ export default function Analyze() {
     },
     onError: (error: any) => {
       console.error('[Schedule] Mutation error:', error);
+      const errorMessage = error?.message || error?.error || "Failed to schedule deadline";
       toast({ 
         title: "Error", 
-        description: error.message || "Failed to schedule deadline", 
+        description: errorMessage, 
         variant: "destructive" 
       });
     },

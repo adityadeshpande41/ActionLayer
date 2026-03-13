@@ -53,7 +53,28 @@ dashboardRouter.get("/risk-drift", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const topRisks = await storage.getTopRisks(5);
+    console.log('[Dashboard] Fetching risk drift for user:', userId);
+    
+    // Get user's projects first
+    const projects = await storage.getProjectsByUserId(userId);
+    const projectIds = projects.map((p) => p.id);
+    
+    if (projectIds.length === 0) {
+      return res.json([]);
+    }
+    
+    // Get risks from user's projects
+    const allRisks = await Promise.all(
+      projectIds.map((id) => storage.getRisksByProjectId(id))
+    );
+    const risks = allRisks.flat();
+    
+    console.log('[Dashboard] Found risks:', risks.length);
+    
+    // Sort by mentions and take top 5
+    const topRisks = risks
+      .sort((a, b) => (b.mentions || 1) - (a.mentions || 1))
+      .slice(0, 5);
     
     // Format for frontend
     const riskDrift = topRisks.map((risk) => ({
@@ -68,6 +89,9 @@ dashboardRouter.get("/risk-drift", async (req, res) => {
     res.json(riskDrift);
   } catch (error) {
     console.error("Error fetching risk drift:", error);
+    if (error instanceof Error) {
+      console.error("Error stack:", error.stack);
+    }
     res.status(500).json({ error: "Failed to fetch risk drift" });
   }
 });
@@ -80,15 +104,29 @@ dashboardRouter.get("/recent-runs", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
+    console.log('[Dashboard] Fetching recent runs for user:', userId);
     const limit = parseInt(req.query.limit as string) || 10;
-    const analyses = await storage.getRecentAnalyses(limit);
-
-    // Get project names
-    const projectIds = Array.from(new Set(analyses.map((a) => a.projectId)));
-    const projects = await Promise.all(
-      projectIds.map((id) => storage.getProject(id))
+    
+    // Get user's projects first
+    const projects = await storage.getProjectsByUserId(userId);
+    const projectIds = projects.map((p) => p.id);
+    
+    if (projectIds.length === 0) {
+      return res.json([]);
+    }
+    
+    // Get analyses from user's projects
+    const allAnalyses = await Promise.all(
+      projectIds.map((id) => storage.getAnalysesByProjectId(id))
     );
-    const projectMap = new Map(projects.filter(Boolean).map((p) => [p!.id, p!.name]));
+    const analyses = allAnalyses.flat()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+    
+    console.log('[Dashboard] Found analyses:', analyses.length);
+
+    // Create project name map
+    const projectMap = new Map(projects.map((p) => [p.id, p.name]));
 
     const recentRuns = analyses.map((analysis) => ({
       id: analysis.id,
@@ -100,9 +138,14 @@ dashboardRouter.get("/recent-runs", async (req, res) => {
       status: analysis.status,
     }));
 
+    console.log('[Dashboard] Returning recent runs:', recentRuns.length);
     res.json(recentRuns);
   } catch (error) {
     console.error("Error fetching recent runs:", error);
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
     res.status(500).json({ error: "Failed to fetch recent runs" });
   }
 });
