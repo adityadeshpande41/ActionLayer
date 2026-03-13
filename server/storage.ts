@@ -801,14 +801,40 @@ export class SqliteStorage implements IStorage {
   // Calendar Events
   async getCalendarEvent(id: string): Promise<CalendarEvent | undefined> {
     const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
-    return result[0];
+    const event = result[0];
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (event && isPostgres) {
+      return {
+        ...event,
+        startDate: new Date(event.startDate as any),
+        endDate: event.endDate ? new Date(event.endDate as any) : null,
+        createdAt: new Date(event.createdAt as any),
+        updatedAt: new Date(event.updatedAt as any),
+      } as CalendarEvent;
+    }
+    
+    return event;
   }
 
   async getCalendarEventsByProjectId(projectId: string): Promise<CalendarEvent[]> {
-    return await db.select()
+    const results = await db.select()
       .from(calendarEvents)
       .where(eq(calendarEvents.projectId, projectId))
       .orderBy(calendarEvents.startDate);
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (isPostgres) {
+      return results.map(event => ({
+        ...event,
+        startDate: new Date(event.startDate as any),
+        endDate: event.endDate ? new Date(event.endDate as any) : null,
+        createdAt: new Date(event.createdAt as any),
+        updatedAt: new Date(event.updatedAt as any),
+      })) as CalendarEvent[];
+    }
+    
+    return results;
   }
 
   async getCalendarEventsByDateRange(projectId: string, startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
@@ -816,7 +842,7 @@ export class SqliteStorage implements IStorage {
     const start = isPostgres ? startDate.toISOString() : startDate;
     const end = isPostgres ? endDate.toISOString() : endDate;
     
-    return await db.select()
+    const results = await db.select()
       .from(calendarEvents)
       .where(
         and(
@@ -826,13 +852,26 @@ export class SqliteStorage implements IStorage {
         )
       )
       .orderBy(calendarEvents.startDate);
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (isPostgres) {
+      return results.map(event => ({
+        ...event,
+        startDate: new Date(event.startDate as any),
+        endDate: event.endDate ? new Date(event.endDate as any) : null,
+        createdAt: new Date(event.createdAt as any),
+        updatedAt: new Date(event.updatedAt as any),
+      })) as CalendarEvent[];
+    }
+    
+    return results;
   }
 
   async getUpcomingEvents(projectId: string, limit: number = 10): Promise<CalendarEvent[]> {
     const now = new Date();
     const nowValue = isPostgres ? now.toISOString() : now;
     
-    return await db.select()
+    const results = await db.select()
       .from(calendarEvents)
       .where(
         and(
@@ -843,6 +882,19 @@ export class SqliteStorage implements IStorage {
       )
       .orderBy(calendarEvents.startDate)
       .limit(limit);
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (isPostgres) {
+      return results.map(event => ({
+        ...event,
+        startDate: new Date(event.startDate as any),
+        endDate: event.endDate ? new Date(event.endDate as any) : null,
+        createdAt: new Date(event.createdAt as any),
+        updatedAt: new Date(event.updatedAt as any),
+      })) as CalendarEvent[];
+    }
+    
+    return results;
   }
 
   async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
@@ -881,7 +933,20 @@ export class SqliteStorage implements IStorage {
     });
     
     const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
-    return result[0]!;
+    const event = result[0]!;
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (isPostgres) {
+      return {
+        ...event,
+        startDate: new Date(event.startDate as any),
+        endDate: event.endDate ? new Date(event.endDate as any) : null,
+        createdAt: new Date(event.createdAt as any),
+        updatedAt: new Date(event.updatedAt as any),
+      } as CalendarEvent;
+    }
+    
+    return event;
   }
 
   async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
