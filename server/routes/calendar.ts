@@ -492,6 +492,8 @@ calendarRouter.post("/google/import/:projectId", async (req, res) => {
       new Date(endDate)
     );
 
+    console.log(`[Google Calendar Import] Fetched ${googleEvents.length} events from Google Calendar for date range ${startDate} to ${endDate}`);
+
     // Import events to ActionLayer
     const importedEvents = [];
     for (const gEvent of googleEvents) {
