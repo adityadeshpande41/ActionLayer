@@ -38,29 +38,39 @@ export default function CalendarPage() {
 
   // Import from Google Calendar mutation
   const importGoogleMutation = useMutation({
-    mutationFn: (clearExisting: boolean = false) => {
+    mutationFn: async (clearExisting: boolean = false) => {
       if (!selectedProjectId) throw new Error("No project selected");
       const start = startOfMonth(selectedDate);
       const end = endOfMonth(selectedDate);
-      return fetch(`/api/calendar/google/import/${selectedProjectId}`, {
+      const response = await fetch(`/api/calendar/google/import/${selectedProjectId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           startDate: start.toISOString(),
           endDate: end.toISOString(),
           clearExisting,
         }),
-      }).then(r => r.json());
+      });
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Import failed" }));
+        throw new Error(error.error || "Import failed");
+      }
+      
+      return response.json();
     },
     onSuccess: (data) => {
+      console.log("[Import Success]", data);
       queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
       queryClient.invalidateQueries({ queryKey: ["upcoming-events"] });
       toast({ 
         title: "Import Complete", 
-        description: `Imported ${data.imported} of ${data.total} events from Google Calendar.` 
+        description: `Imported ${data.imported || 0} of ${data.total || 0} events from Google Calendar.` 
       });
     },
     onError: (error: any) => {
+      console.error("[Import Error]", error);
       toast({ title: "Import Failed", description: error.message, variant: "destructive" });
     },
   });
