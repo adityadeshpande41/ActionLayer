@@ -108,6 +108,12 @@ class GoogleCalendarService {
     );
     
     const tokens = JSON.parse(userTokenJson);
+    
+    // Check if refresh token exists
+    if (!tokens.refresh_token) {
+      throw new Error("No refresh token available. Please disconnect and reconnect your Google Calendar.");
+    }
+    
     client.setCredentials(tokens);
     return google.calendar({ version: "v3", auth: client });
   }
