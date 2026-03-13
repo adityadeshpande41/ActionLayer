@@ -59,13 +59,20 @@ class GoogleCalendarService {
 
       const { client_id, client_secret, redirect_uris } = this.credentials.installed || this.credentials.web;
 
+      // Choose redirect URI based on environment
+      const redirectUri = process.env.GOOGLE_REDIRECT_URI || 
+                         (process.env.NODE_ENV === "production" 
+                           ? redirect_uris.find((uri: string) => !uri.includes("localhost")) 
+                           : redirect_uris.find((uri: string) => uri.includes("localhost"))) ||
+                         redirect_uris[0];
+
       this.oauth2Client = new google.auth.OAuth2(
         client_id,
         client_secret,
-        redirect_uris[0]
+        redirectUri
       );
 
-      console.log("[Google Calendar] OAuth client initialized");
+      console.log("[Google Calendar] OAuth client initialized with redirect:", redirectUri);
     } catch (error) {
       console.error("[Google Calendar] Initialization error:", error);
     }
