@@ -37,7 +37,15 @@ commandRouter.post("/", async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("Error handling command:", error);
-    res.status(500).json({ error: "Failed to process command" });
+    // Log more details for debugging
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
+    res.status(500).json({ 
+      error: "Failed to process command",
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
