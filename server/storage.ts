@@ -27,7 +27,7 @@ import {
   calendarEvents,
   userIntegrations,
 } from "@shared/schema";
-import { db } from "./db";
+import { db, isPostgres } from "./db";
 import { sql } from "drizzle-orm";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -843,6 +843,17 @@ export class SqliteStorage implements IStorage {
     const id = randomUUID();
     const now = sql`CURRENT_TIMESTAMP`;
     
+    // For PostgreSQL, convert Date objects to ISO strings
+    // For SQLite, keep as Date objects (Drizzle converts to integers)
+    const startDate = isPostgres && insertEvent.startDate instanceof Date
+      ? insertEvent.startDate.toISOString()
+      : insertEvent.startDate;
+    const endDate = insertEvent.endDate
+      ? (isPostgres && insertEvent.endDate instanceof Date
+          ? insertEvent.endDate.toISOString()
+          : insertEvent.endDate)
+      : null;
+    
     await db.insert(calendarEvents).values({
       id,
       projectId: insertEvent.projectId,
@@ -850,8 +861,8 @@ export class SqliteStorage implements IStorage {
       title: insertEvent.title,
       description: insertEvent.description || null,
       eventType: insertEvent.eventType,
-      startDate: insertEvent.startDate,
-      endDate: insertEvent.endDate || null,
+      startDate: startDate as any,
+      endDate: endDate as any,
       allDay: insertEvent.allDay ?? false,
       location: insertEvent.location || null,
       attendees: insertEvent.attendees || null,

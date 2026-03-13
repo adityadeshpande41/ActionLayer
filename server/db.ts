@@ -7,10 +7,11 @@ import * as schema from "@shared/schema";
 // Use PostgreSQL in production, SQLite in development
 const isProduction = process.env.NODE_ENV === "production";
 const databaseUrl = process.env.DATABASE_URL;
+export const isPostgres = isProduction && databaseUrl?.startsWith("postgres");
 
 let db: ReturnType<typeof drizzleSqlite> | ReturnType<typeof drizzlePostgres>;
 
-if (isProduction && databaseUrl?.startsWith("postgres")) {
+if (isPostgres) {
   // PostgreSQL for production
   const pool = new Pool({
     connectionString: databaseUrl,
