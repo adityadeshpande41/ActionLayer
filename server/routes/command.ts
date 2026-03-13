@@ -23,15 +23,24 @@ commandRouter.post("/", async (req, res) => {
 
     const result = await handleCommand(command, context);
 
-    // Create analysis record for command
-    if (projectId) {
-      await storage.createAnalysis({
-        projectId,
-        userId,
-        inputType: "command",
-        summary: [result.response],
-        status: "completed",
-      });
+    // Create analysis record for command (only if projectId is valid)
+    if (projectId && projectId !== "default-project") {
+      try {
+        // Verify project exists before creating analysis
+        const project = await storage.getProject(projectId);
+        if (project) {
+          await storage.createAnalysis({
+            projectId,
+            userId,
+            inputType: "command",
+            summary: [result.response],
+            status: "completed",
+          });
+        }
+      } catch (err) {
+        // Log but don't fail the command if analysis creation fails
+        console.error("Failed to create analysis record:", err);
+      }
     }
 
     res.json(result);
