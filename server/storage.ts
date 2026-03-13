@@ -652,10 +652,20 @@ export class SqliteStorage implements IStorage {
   }
 
   async getRecentAnalyses(limit: number = 10): Promise<Analysis[]> {
-    return await db.select()
+    const results = await db.select()
       .from(analyses)
       .orderBy(desc(analyses.createdAt))
       .limit(limit);
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (isPostgres) {
+      return results.map((analysis: any) => ({
+        ...analysis,
+        createdAt: new Date(analysis.createdAt),
+      })) as Analysis[];
+    }
+    
+    return results;
   }
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
@@ -733,10 +743,21 @@ export class SqliteStorage implements IStorage {
   }
 
   async getTopRisks(limit: number = 5): Promise<Risk[]> {
-    return await db.select()
+    const results = await db.select()
       .from(risks)
       .orderBy(desc(risks.mentions))
       .limit(limit);
+    
+    // Convert ISO strings back to Date objects for PostgreSQL
+    if (isPostgres) {
+      return results.map((risk: any) => ({
+        ...risk,
+        lastSeen: new Date(risk.lastSeen),
+        createdAt: new Date(risk.createdAt),
+      })) as Risk[];
+    }
+    
+    return results;
   }
 
   async createRisk(insertRisk: InsertRisk): Promise<Risk> {
