@@ -28,6 +28,7 @@ import {
   userIntegrations,
 } from "@shared/schema";
 import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
