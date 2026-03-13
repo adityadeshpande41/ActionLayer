@@ -4,7 +4,6 @@ import fs from "fs";
 import path from "path";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar.events"];
-const TOKEN_PATH = path.join(process.cwd(), "google-token.json");
 const CREDENTIALS_PATH = path.join(process.cwd(), "google-credentials.json");
 
 interface GoogleCalendarEvent {
@@ -31,22 +30,34 @@ interface GoogleCalendarEvent {
 
 class GoogleCalendarService {
   private oauth2Client: OAuth2Client | null = null;
-  private calendar: any = null;
+  private credentials: any = null;
 
   constructor() {
     this.initialize();
   }
 
-  private async initialize() {
+  private initialize() {
     try {
-      // Check if credentials file exists
-      if (!fs.existsSync(CREDENTIALS_PATH)) {
-        console.log("[Google Calendar] Credentials file not found. Google Calendar integration disabled.");
+      // Try to read from environment variable first (production)
+      if (process.env.GOOGLE_CREDENTIALS) {
+        try {
+          this.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+          console.log("[Google Calendar] Loaded credentials from environment variable");
+        } catch (error) {
+          console.error("[Google Calendar] Failed to parse GOOGLE_CREDENTIALS env var:", error);
+          return;
+        }
+      } 
+      // Fall back to file (development)
+      else if (fs.existsSync(CREDENTIALS_PATH)) {
+        this.credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf-8"));
+        console.log("[Google Calendar] Loaded credentials from file");
+      } else {
+        console.log("[Google Calendar] No credentials found. Google Calendar integration disabled.");
         return;
       }
 
-      const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf-8"));
-      const { client_id, client_secret, redirect_uris } = credentials.installed || credentials.web;
+      const { client_id, client_secret, redirect_uris } = this.credentials.installed || this.credentials.web;
 
       this.oauth2Client = new google.auth.OAuth2(
         client_id,
@@ -54,40 +65,14 @@ class GoogleCalendarService {
         redirect_uris[0]
       );
 
-      // Load token if exists
-      if (fs.existsSync(TOKEN_PATH)) {
-        const token = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        this.oauth2Client.setCredentials(token);
-        this.calendar = google.calendar({ version: "v3", auth: this.oauth2Client });
-        console.log("[Google Calendar] Initialized successfully");
-      } else {
-        console.log("[Google Calendar] Token not found. User needs to authenticate.");
-      }
+      console.log("[Google Calendar] OAuth client initialized");
     } catch (error) {
       console.error("[Google Calendar] Initialization error:", error);
     }
   }
 
   isConfigured(): boolean {
-    return this.oauth2Client !== null && this.calendar !== null;
-  }
-
-  disconnect(): boolean {
-    try {
-      // Remove token file
-      if (fs.existsSync(TOKEN_PATH)) {
-        fs.unlinkSync(TOKEN_PATH);
-      }
-      
-      // Reset client
-      this.calendar = null;
-      
-      console.log("[Google Calendar] Disconnected successfully");
-      return true;
-    } catch (error) {
-      console.error("[Google Calendar] Disconnect error:", error);
-      return false;
-    }
+    return this.oauth2Client !== null;
   }
 
   getAuthUrl(): string | null {
@@ -99,32 +84,46 @@ class GoogleCalendarService {
     });
   }
 
-  async handleAuthCallback(code: string): Promise<boolean> {
+  // Get calendar client for a specific user's token
+  private getCalendarForUser(userTokenJson: string): any {
+    if (!this.oauth2Client) {
+      throw new Error("OAuth client not initialized");
+    }
+
+    const client = new google.auth.OAuth2(
+      (this.oauth2Client as any)._clientId,
+      (this.oauth2Client as any)._clientSecret,
+      (this.oauth2Client as any).redirectUri
+    );
+    
+    const tokens = JSON.parse(userTokenJson);
+    client.setCredentials(tokens);
+    return google.calendar({ version: "v3", auth: client });
+  }
+
+  // Exchange authorization code for tokens
+  async handleAuthCallback(code: string): Promise<{ tokens: string }> {
     try {
-      if (!this.oauth2Client) return false;
+      if (!this.oauth2Client) {
+        throw new Error("OAuth client not initialized");
+      }
 
       const { tokens } = await this.oauth2Client.getToken(code);
-      this.oauth2Client.setCredentials(tokens);
-
-      // Save token
-      fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
-      
-      this.calendar = google.calendar({ version: "v3", auth: this.oauth2Client });
       console.log("[Google Calendar] Authentication successful");
-      return true;
+      
+      // Return tokens as JSON string to be stored in database
+      return { tokens: JSON.stringify(tokens) };
     } catch (error) {
       console.error("[Google Calendar] Auth callback error:", error);
-      return false;
+      throw error;
     }
   }
 
-  async createEvent(event: GoogleCalendarEvent): Promise<any> {
-    if (!this.calendar) {
-      throw new Error("Google Calendar not configured");
-    }
-
+  async createEvent(userTokenJson: string, event: GoogleCalendarEvent): Promise<any> {
     try {
-      const response = await this.calendar.events.insert({
+      const calendar = this.getCalendarForUser(userTokenJson);
+      
+      const response = await calendar.events.insert({
         calendarId: "primary",
         requestBody: event,
       });
@@ -137,13 +136,11 @@ class GoogleCalendarService {
     }
   }
 
-  async updateEvent(eventId: string, event: Partial<GoogleCalendarEvent>): Promise<any> {
-    if (!this.calendar) {
-      throw new Error("Google Calendar not configured");
-    }
-
+  async updateEvent(userTokenJson: string, eventId: string, event: Partial<GoogleCalendarEvent>): Promise<any> {
     try {
-      const response = await this.calendar.events.patch({
+      const calendar = this.getCalendarForUser(userTokenJson);
+      
+      const response = await calendar.events.patch({
         calendarId: "primary",
         eventId: eventId,
         requestBody: event,
@@ -157,13 +154,11 @@ class GoogleCalendarService {
     }
   }
 
-  async deleteEvent(eventId: string): Promise<void> {
-    if (!this.calendar) {
-      throw new Error("Google Calendar not configured");
-    }
-
+  async deleteEvent(userTokenJson: string, eventId: string): Promise<void> {
     try {
-      await this.calendar.events.delete({
+      const calendar = this.getCalendarForUser(userTokenJson);
+      
+      await calendar.events.delete({
         calendarId: "primary",
         eventId: eventId,
       });
@@ -175,14 +170,12 @@ class GoogleCalendarService {
     }
   }
 
-  async listEvents(timeMin: Date, timeMax: Date): Promise<any[]> {
-    if (!this.calendar) {
-      throw new Error("Google Calendar not configured");
-    }
-
+  async listEvents(userTokenJson: string, timeMin: Date, timeMax: Date, calendarId: string = "primary"): Promise<any[]> {
     try {
-      const response = await this.calendar.events.list({
-        calendarId: "primary",
+      const calendar = this.getCalendarForUser(userTokenJson);
+      
+      const response = await calendar.events.list({
+        calendarId: calendarId,
         timeMin: timeMin.toISOString(),
         timeMax: timeMax.toISOString(),
         singleEvents: true,
@@ -196,13 +189,11 @@ class GoogleCalendarService {
     }
   }
 
-  async getEvent(eventId: string): Promise<any> {
-    if (!this.calendar) {
-      throw new Error("Google Calendar not configured");
-    }
-
+  async getEvent(userTokenJson: string, eventId: string): Promise<any> {
     try {
-      const response = await this.calendar.events.get({
+      const calendar = this.getCalendarForUser(userTokenJson);
+      
+      const response = await calendar.events.get({
         calendarId: "primary",
         eventId: eventId,
       });
@@ -214,58 +205,16 @@ class GoogleCalendarService {
     }
   }
 
-  // Convert ActionLayer event to Google Calendar format
-  convertToGoogleEvent(actionLayerEvent: any): GoogleCalendarEvent {
-    const event: GoogleCalendarEvent = {
-      summary: actionLayerEvent.title,
-      description: actionLayerEvent.description || "",
-      start: {},
-      end: {},
-    };
-
-    if (actionLayerEvent.allDay) {
-      // All-day event
-      const startDate = new Date(actionLayerEvent.startDate);
-      event.start.date = startDate.toISOString().split("T")[0];
+  async listCalendars(userTokenJson: string): Promise<any[]> {
+    try {
+      const calendar = this.getCalendarForUser(userTokenJson);
       
-      const endDate = actionLayerEvent.endDate 
-        ? new Date(actionLayerEvent.endDate)
-        : new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-      event.end.date = endDate.toISOString().split("T")[0];
-    } else {
-      // Timed event
-      event.start.dateTime = new Date(actionLayerEvent.startDate).toISOString();
-      event.start.timeZone = "America/Los_Angeles"; // TODO: Make configurable
-      
-      if (actionLayerEvent.endDate) {
-        event.end.dateTime = new Date(actionLayerEvent.endDate).toISOString();
-      } else {
-        // Default to 1 hour duration
-        const endTime = new Date(actionLayerEvent.startDate);
-        endTime.setHours(endTime.getHours() + 1);
-        event.end.dateTime = endTime.toISOString();
-      }
-      event.end.timeZone = "America/Los_Angeles";
+      const response = await calendar.calendarList.list();
+      return response.data.items || [];
+    } catch (error: any) {
+      console.error("[Google Calendar] List calendars error:", error);
+      throw new Error(`Failed to list calendars: ${error.message}`);
     }
-
-    if (actionLayerEvent.location) {
-      event.location = actionLayerEvent.location;
-    }
-
-    if (actionLayerEvent.attendees && Array.isArray(actionLayerEvent.attendees)) {
-      event.attendees = actionLayerEvent.attendees.map((email: string) => ({ email }));
-    }
-
-    if (actionLayerEvent.reminderMinutes) {
-      event.reminders = {
-        useDefault: false,
-        overrides: [
-          { method: "popup", minutes: actionLayerEvent.reminderMinutes },
-        ],
-      };
-    }
-
-    return event;
   }
 }
 

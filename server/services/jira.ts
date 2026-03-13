@@ -1,8 +1,4 @@
 import axios, { AxiosInstance } from "axios";
-import fs from "fs";
-import path from "path";
-
-const JIRA_CONFIG_PATH = path.join(process.cwd(), "jira-config.json");
 
 interface JiraConfig {
   baseUrl: string;
@@ -24,92 +20,25 @@ interface JiraIssue {
 }
 
 class JiraService {
-  private client: AxiosInstance | null = null;
-  private config: JiraConfig | null = null;
-
-  constructor() {
-    this.initialize();
+  // Create a Jira client for a specific user's config
+  private createClient(config: JiraConfig): AxiosInstance {
+    return axios.create({
+      baseURL: `${config.baseUrl}/rest/api/3`,
+      auth: {
+        username: config.email,
+        password: config.apiToken,
+      },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+    });
   }
 
-  private initialize() {
+  async testConnection(config: JiraConfig): Promise<{ success: boolean; user?: any; error?: string }> {
     try {
-      if (!fs.existsSync(JIRA_CONFIG_PATH)) {
-        console.log("[Jira] Config file not found. Jira integration disabled.");
-        return;
-      }
-
-      this.config = JSON.parse(fs.readFileSync(JIRA_CONFIG_PATH, "utf-8"));
-      
-      if (!this.config?.baseUrl || !this.config?.email || !this.config?.apiToken) {
-        console.log("[Jira] Invalid config. Jira integration disabled.");
-        return;
-      }
-
-      this.client = axios.create({
-        baseURL: `${this.config.baseUrl}/rest/api/3`,
-        auth: {
-          username: this.config.email,
-          password: this.config.apiToken,
-        },
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-      });
-
-      console.log("[Jira] Initialized successfully");
-    } catch (error) {
-      console.error("[Jira] Initialization error:", error);
-    }
-  }
-
-  isConfigured(): boolean {
-    return this.client !== null && this.config !== null;
-  }
-
-  getConfig(): JiraConfig | null {
-    return this.config;
-  }
-
-  async saveConfig(config: JiraConfig): Promise<boolean> {
-    try {
-      // Test the connection first
-      const testClient = axios.create({
-        baseURL: `${config.baseUrl}/rest/api/3`,
-        auth: {
-          username: config.email,
-          password: config.apiToken,
-        },
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-      });
-
-      await testClient.get("/myself");
-
-      // Save config
-      fs.writeFileSync(JIRA_CONFIG_PATH, JSON.stringify(config, null, 2));
-      
-      // Reinitialize
-      this.config = config;
-      this.client = testClient;
-      
-      console.log("[Jira] Configuration saved successfully");
-      return true;
-    } catch (error: any) {
-      console.error("[Jira] Config save error:", error.response?.data || error.message);
-      return false;
-    }
-  }
-
-  async testConnection(): Promise<{ success: boolean; user?: any; error?: string }> {
-    if (!this.client) {
-      return { success: false, error: "Jira not configured" };
-    }
-
-    try {
-      const response = await this.client.get("/myself");
+      const client = this.createClient(config);
+      const response = await client.get("/myself");
       return { success: true, user: response.data };
     } catch (error: any) {
       return { 
@@ -119,13 +48,10 @@ class JiraService {
     }
   }
 
-  async getProjects(): Promise<any[]> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async getProjects(config: JiraConfig): Promise<any[]> {
     try {
-      const response = await this.client.get("/project/search");
+      const client = this.createClient(config);
+      const response = await client.get("/project/search");
       return response.data.values || [];
     } catch (error: any) {
       console.error("[Jira] Get projects error:", error.response?.data || error.message);
@@ -133,13 +59,10 @@ class JiraService {
     }
   }
 
-  async getIssueTypes(projectKey: string): Promise<any[]> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async getIssueTypes(config: JiraConfig, projectKey: string): Promise<any[]> {
     try {
-      const response = await this.client.get(`/project/${projectKey}`);
+      const client = this.createClient(config);
+      const response = await client.get(`/project/${projectKey}`);
       return response.data.issueTypes || [];
     } catch (error: any) {
       console.error("[Jira] Get issue types error:", error.response?.data || error.message);
@@ -147,13 +70,10 @@ class JiraService {
     }
   }
 
-  async createIssue(issue: JiraIssue): Promise<any> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async createIssue(config: JiraConfig, issue: JiraIssue): Promise<any> {
     try {
-      const response = await this.client.post("/issue", issue);
+      const client = this.createClient(config);
+      const response = await client.post("/issue", issue);
       console.log("[Jira] Issue created:", response.data.key);
       return response.data;
     } catch (error: any) {
@@ -162,13 +82,10 @@ class JiraService {
     }
   }
 
-  async updateIssue(issueKey: string, fields: any): Promise<any> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async updateIssue(config: JiraConfig, issueKey: string, fields: any): Promise<any> {
     try {
-      await this.client.put(`/issue/${issueKey}`, { fields });
+      const client = this.createClient(config);
+      await client.put(`/issue/${issueKey}`, { fields });
       console.log("[Jira] Issue updated:", issueKey);
       return { success: true };
     } catch (error: any) {
@@ -177,13 +94,10 @@ class JiraService {
     }
   }
 
-  async getIssue(issueKey: string): Promise<any> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async getIssue(config: JiraConfig, issueKey: string): Promise<any> {
     try {
-      const response = await this.client.get(`/issue/${issueKey}`);
+      const client = this.createClient(config);
+      const response = await client.get(`/issue/${issueKey}`);
       return response.data;
     } catch (error: any) {
       console.error("[Jira] Get issue error:", error.response?.data || error.message);
@@ -191,13 +105,10 @@ class JiraService {
     }
   }
 
-  async transitionIssue(issueKey: string, transitionId: string): Promise<any> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async transitionIssue(config: JiraConfig, issueKey: string, transitionId: string): Promise<any> {
     try {
-      await this.client.post(`/issue/${issueKey}/transitions`, {
+      const client = this.createClient(config);
+      await client.post(`/issue/${issueKey}/transitions`, {
         transition: { id: transitionId },
       });
       console.log("[Jira] Issue transitioned:", issueKey);
@@ -208,13 +119,10 @@ class JiraService {
     }
   }
 
-  async searchIssues(jql: string, maxResults: number = 50): Promise<any[]> {
-    if (!this.client) {
-      throw new Error("Jira not configured");
-    }
-
+  async searchIssues(config: JiraConfig, jql: string, maxResults: number = 50): Promise<any[]> {
     try {
-      const response = await this.client.post("/search", {
+      const client = this.createClient(config);
+      const response = await client.post("/search", {
         jql,
         maxResults,
         fields: ["summary", "status", "assignee", "priority", "created", "updated"],

@@ -15,6 +15,8 @@ import {
   type InsertActionItem,
   type CalendarEvent,
   type InsertCalendarEvent,
+  type UserIntegration,
+  type InsertUserIntegration,
   users,
   projects,
   transcripts,
@@ -23,6 +25,7 @@ import {
   risks,
   actionItems,
   calendarEvents,
+  userIntegrations,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
@@ -33,6 +36,10 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserGoogleToken(userId: string, token: string | null): Promise<void>;
+  getUserGoogleToken(userId: string): Promise<string | null>;
+  updateUserJiraConfig(userId: string, config: { baseUrl: string; email: string; apiToken: string } | null): Promise<void>;
+  getUserJiraConfig(userId: string): Promise<{ baseUrl: string; email: string; apiToken: string } | null>;
 
   // Projects
   getProject(id: string): Promise<Project | undefined>;
@@ -118,10 +125,55 @@ export class MemStorage implements IStorage {
       ...insertUser, 
       id, 
       email: insertUser.email || null,
+      googleCalendarToken: null,
+      jiraBaseUrl: null,
+      jiraEmail: null,
+      jiraApiToken: null,
       createdAt: new Date() 
     };
     this.users.set(id, user);
     return user;
+  }
+
+  async updateUserGoogleToken(userId: string, token: string | null): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      user.googleCalendarToken = token;
+      this.users.set(userId, user);
+    }
+  }
+
+  async getUserGoogleToken(userId: string): Promise<string | null> {
+    const user = this.users.get(userId);
+    return user?.googleCalendarToken || null;
+  }
+
+  async updateUserJiraConfig(userId: string, config: { baseUrl: string; email: string; apiToken: string } | null): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      if (config) {
+        user.jiraBaseUrl = config.baseUrl;
+        user.jiraEmail = config.email;
+        user.jiraApiToken = config.apiToken;
+      } else {
+        user.jiraBaseUrl = null;
+        user.jiraEmail = null;
+        user.jiraApiToken = null;
+      }
+      this.users.set(userId, user);
+    }
+  }
+
+  async getUserJiraConfig(userId: string): Promise<{ baseUrl: string; email: string; apiToken: string } | null> {
+    const user = this.users.get(userId);
+    if (user?.jiraBaseUrl && user?.jiraEmail && user?.jiraApiToken) {
+      return {
+        baseUrl: user.jiraBaseUrl,
+        email: user.jiraEmail,
+        apiToken: user.jiraApiToken,
+      };
+    }
+    return null;
   }
 
   // Projects
@@ -454,10 +506,69 @@ export class SqliteStorage implements IStorage {
       ...insertUser,
       id,
       email: insertUser.email || null,
+      googleCalendarToken: null,
+      jiraBaseUrl: null,
+      jiraEmail: null,
+      jiraApiToken: null,
       createdAt: new Date(),
     };
     await db.insert(users).values(user);
     return user;
+  }
+
+  async updateUserGoogleToken(userId: string, token: string | null): Promise<void> {
+    await db.update(users)
+      .set({ googleCalendarToken: token })
+      .where(eq(users.id, userId));
+  }
+
+  async getUserGoogleToken(userId: string): Promise<string | null> {
+    const result = await db.select({ token: users.googleCalendarToken })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return result[0]?.token || null;
+  }
+
+  async updateUserJiraConfig(userId: string, config: { baseUrl: string; email: string; apiToken: string } | null): Promise<void> {
+    if (config) {
+      await db.update(users)
+        .set({ 
+          jiraBaseUrl: config.baseUrl,
+          jiraEmail: config.email,
+          jiraApiToken: config.apiToken,
+        })
+        .where(eq(users.id, userId));
+    } else {
+      await db.update(users)
+        .set({ 
+          jiraBaseUrl: null,
+          jiraEmail: null,
+          jiraApiToken: null,
+        })
+        .where(eq(users.id, userId));
+    }
+  }
+
+  async getUserJiraConfig(userId: string): Promise<{ baseUrl: string; email: string; apiToken: string } | null> {
+    const result = await db.select({ 
+      baseUrl: users.jiraBaseUrl,
+      email: users.jiraEmail,
+      apiToken: users.jiraApiToken,
+    })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    
+    const config = result[0];
+    if (config?.baseUrl && config?.email && config?.apiToken) {
+      return {
+        baseUrl: config.baseUrl,
+        email: config.email,
+        apiToken: config.apiToken,
+      };
+    }
+    return null;
   }
 
   // Projects
@@ -729,6 +840,58 @@ export class SqliteStorage implements IStorage {
 
   async deleteCalendarEvent(id: string): Promise<boolean> {
     await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+    return true;
+  }
+
+  // User Integrations
+  async getUserIntegration(userId: string, provider: string): Promise<UserIntegration | undefined> {
+    const [integration] = await db.select()
+      .from(userIntegrations)
+      .where(and(
+        eq(userIntegrations.userId, userId),
+        eq(userIntegrations.provider, provider)
+      ))
+      .limit(1);
+    return integration;
+  }
+
+  async getUserIntegrations(userId: string): Promise<UserIntegration[]> {
+    return db.select()
+      .from(userIntegrations)
+      .where(eq(userIntegrations.userId, userId));
+  }
+
+  async createUserIntegration(integration: InsertUserIntegration): Promise<UserIntegration> {
+    const id = randomUUID();
+    const now = new Date();
+    const newIntegration: UserIntegration = {
+      ...integration,
+      id,
+      isActive: integration.isActive ?? true,
+      metadata: integration.metadata || null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.insert(userIntegrations).values(newIntegration);
+    return newIntegration;
+  }
+
+  async updateUserIntegration(userId: string, provider: string, updates: Partial<InsertUserIntegration>): Promise<UserIntegration | undefined> {
+    await db.update(userIntegrations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(userIntegrations.userId, userId),
+        eq(userIntegrations.provider, provider)
+      ));
+    return this.getUserIntegration(userId, provider);
+  }
+
+  async deleteUserIntegration(userId: string, provider: string): Promise<boolean> {
+    await db.delete(userIntegrations)
+      .where(and(
+        eq(userIntegrations.userId, userId),
+        eq(userIntegrations.provider, provider)
+      ));
     return true;
   }
 }

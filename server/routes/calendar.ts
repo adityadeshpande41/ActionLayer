@@ -159,22 +159,47 @@ calendarRouter.delete("/:id", async (req, res) => {
 import { googleCalendarService } from "../services/google-calendar";
 
 // Check if Google Calendar is configured
-calendarRouter.get("/google/status", (req, res) => {
+calendarRouter.get("/google/status", async (req, res) => {
+  const userId = (req as any).user?.id;
+  const isConfigured = googleCalendarService.isConfigured();
+  
+  let userConnected = false;
+  if (userId && isConfigured) {
+    const userToken = await storage.getUserGoogleToken(userId);
+    userConnected = !!userToken;
+  }
+  
   res.json({
-    configured: googleCalendarService.isConfigured(),
-    authUrl: googleCalendarService.getAuthUrl(),
+    configured: isConfigured && userConnected,
+    authUrl: isConfigured ? googleCalendarService.getAuthUrl() : null,
   });
 });
 
-// Disconnect Google Calendar
-calendarRouter.post("/google/disconnect", (req, res) => {
+// List available Google Calendars
+calendarRouter.get("/google/calendars", async (req, res) => {
   try {
-    const success = googleCalendarService.disconnect();
-    if (success) {
-      res.json({ success: true, message: "Google Calendar disconnected successfully" });
-    } else {
-      res.status(500).json({ error: "Failed to disconnect Google Calendar" });
+    if (!googleCalendarService.isConfigured()) {
+      return res.status(400).json({ error: "Google Calendar not configured" });
     }
+
+    const calendars = await googleCalendarService.listCalendars();
+    res.json(calendars);
+  } catch (error: any) {
+    console.error("Error listing Google Calendars:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Disconnect Google Calendar
+calendarRouter.post("/google/disconnect", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    await storage.updateUserGoogleToken(userId, null);
+    res.json({ success: true, message: "Google Calendar disconnected successfully" });
   } catch (error: any) {
     console.error("Error disconnecting Google Calendar:", error);
     res.status(500).json({ error: error.message || "Failed to disconnect" });
@@ -185,17 +210,73 @@ calendarRouter.post("/google/disconnect", (req, res) => {
 calendarRouter.get("/google/callback", async (req, res) => {
   try {
     const { code } = req.query;
+    const userId = (req as any).user?.id;
+    
     if (!code || typeof code !== 'string') {
       return res.status(400).send("Authorization code required");
     }
 
-    const success = await googleCalendarService.handleAuthCallback(code);
-    if (success) {
-      // Redirect to calendar page with success message
-      res.redirect("/calendar?google_connected=true");
-    } else {
-      res.redirect("/calendar?google_error=auth_failed");
+    if (!userId) {
+      return res.redirect("/calendar?google_error=not_logged_in");
     }
+
+    const { tokens } = await googleCalendarService.handleAuthCallback(code);
+    await storage.updateUserGoogleToken(userId, tokens);
+    
+    // Auto-import events from the last 30 days and next 90 days
+    try {
+      const projects = await storage.getProjectsByUserId(userId);
+      if (projects.length > 0) {
+        const projectId = projects[0].id; // Use first project
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30); // 30 days ago
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 90); // 90 days from now
+        
+        const googleEvents = await googleCalendarService.listEvents(
+          tokens,
+          startDate,
+          endDate
+        );
+        
+        console.log(`[Google Calendar] Auto-importing ${googleEvents.length} events`);
+        
+        // Import events
+        for (const gEvent of googleEvents) {
+          try {
+            const description = gEvent.description 
+              ? `${gEvent.description.substring(0, 500)} [Google Calendar: ${gEvent.id}]`
+              : `[Google Calendar: ${gEvent.id}]`;
+            
+            const eventData = {
+              projectId,
+              userId,
+              title: gEvent.summary || "Untitled Event",
+              description,
+              eventType: "meeting" as const,
+              startDate: new Date(gEvent.start?.dateTime || gEvent.start?.date),
+              endDate: gEvent.end ? new Date(gEvent.end?.dateTime || gEvent.end?.date) : undefined,
+              allDay: !gEvent.start?.dateTime,
+              location: gEvent.location || undefined,
+              attendees: gEvent.attendees?.map((a: any) => a.email) || undefined,
+              status: "scheduled" as const,
+            };
+            
+            await storage.createCalendarEvent(eventData);
+          } catch (err) {
+            console.error(`[Google Calendar] Failed to import event ${gEvent.id}:`, err);
+          }
+        }
+        
+        console.log(`[Google Calendar] Auto-import complete`);
+      }
+    } catch (importError) {
+      console.error("[Google Calendar] Auto-import failed:", importError);
+      // Don't fail the connection if import fails
+    }
+    
+    // Redirect to calendar page with success message
+    res.redirect("/calendar?google_connected=true");
   } catch (error) {
     console.error("Error handling Google auth:", error);
     res.redirect("/calendar?google_error=auth_failed");
@@ -206,16 +287,70 @@ calendarRouter.get("/google/callback", async (req, res) => {
 calendarRouter.post("/google/auth", async (req, res) => {
   try {
     const { code } = req.body;
+    const userId = (req as any).user?.id;
+    
     if (!code) {
       return res.status(400).json({ error: "Authorization code required" });
     }
 
-    const success = await googleCalendarService.handleAuthCallback(code);
-    if (success) {
-      res.json({ success: true, message: "Google Calendar connected successfully" });
-    } else {
-      res.status(500).json({ error: "Failed to authenticate with Google Calendar" });
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
+
+    const { tokens } = await googleCalendarService.handleAuthCallback(code);
+    await storage.updateUserGoogleToken(userId, tokens);
+    
+    // Auto-import events from the last 30 days and next 90 days
+    try {
+      const projects = await storage.getProjectsByUserId(userId);
+      if (projects.length > 0) {
+        const projectId = projects[0].id;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 90);
+        
+        const googleEvents = await googleCalendarService.listEvents(
+          tokens,
+          startDate,
+          endDate
+        );
+        
+        console.log(`[Google Calendar] Auto-importing ${googleEvents.length} events`);
+        
+        for (const gEvent of googleEvents) {
+          try {
+            const description = gEvent.description 
+              ? `${gEvent.description.substring(0, 500)} [Google Calendar: ${gEvent.id}]`
+              : `[Google Calendar: ${gEvent.id}]`;
+            
+            const eventData = {
+              projectId,
+              userId,
+              title: gEvent.summary || "Untitled Event",
+              description,
+              eventType: "meeting" as const,
+              startDate: new Date(gEvent.start?.dateTime || gEvent.start?.date),
+              endDate: gEvent.end ? new Date(gEvent.end?.dateTime || gEvent.end?.date) : undefined,
+              allDay: !gEvent.start?.dateTime,
+              location: gEvent.location || undefined,
+              attendees: gEvent.attendees?.map((a: any) => a.email) || undefined,
+              status: "scheduled" as const,
+            };
+            
+            await storage.createCalendarEvent(eventData);
+          } catch (err) {
+            console.error(`[Google Calendar] Failed to import event ${gEvent.id}:`, err);
+          }
+        }
+        
+        console.log(`[Google Calendar] Auto-import complete`);
+      }
+    } catch (importError) {
+      console.error("[Google Calendar] Auto-import failed:", importError);
+    }
+    
+    res.json({ success: true, message: "Google Calendar connected and events imported successfully" });
   } catch (error) {
     console.error("Error handling Google auth:", error);
     res.status(500).json({ error: "Failed to authenticate with Google Calendar" });
@@ -313,6 +448,12 @@ calendarRouter.post("/google/import/:projectId", async (req, res) => {
       return res.status(400).json({ error: "Google Calendar not configured" });
     }
 
+    // Get user's Google Calendar token
+    const userToken = await storage.getUserGoogleToken(userId);
+    if (!userToken) {
+      return res.status(400).json({ error: "Google Calendar not connected. Please connect first." });
+    }
+
     const { startDate, endDate, clearExisting } = req.body;
     if (!startDate || !endDate) {
       return res.status(400).json({ error: "Start and end dates required" });
@@ -333,8 +474,9 @@ calendarRouter.post("/google/import/:projectId", async (req, res) => {
       console.log(`[Google Calendar Import] Cleared ${existingEvents.length} existing events`);
     }
 
-    // Fetch events from Google Calendar
+    // Fetch events from Google Calendar using user's token
     const googleEvents = await googleCalendarService.listEvents(
+      userToken,
       new Date(startDate),
       new Date(endDate)
     );

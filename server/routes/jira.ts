@@ -1,44 +1,89 @@
 import { Router } from "express";
 import { jiraService } from "../services/jira";
+import { storage } from "../storage";
 
 export const jiraRouter = Router();
 
-// Get Jira configuration status
-jiraRouter.get("/status", (req, res) => {
-  const config = jiraService.getConfig();
-  res.json({
-    configured: jiraService.isConfigured(),
-    baseUrl: config?.baseUrl || null,
-    email: config?.email || null,
-  });
+// Get Jira configuration status for current user
+jiraRouter.get("/status", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.json({ configured: false });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    res.json({
+      configured: !!config,
+      baseUrl: config?.baseUrl || null,
+      email: config?.email || null,
+    });
+  } catch (error: any) {
+    console.error("Error getting Jira status:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Save Jira configuration
+// Save Jira configuration for current user
 jiraRouter.post("/config", async (req, res) => {
   try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const { baseUrl, email, apiToken } = req.body;
 
     if (!baseUrl || !email || !apiToken) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const success = await jiraService.saveConfig({ baseUrl, email, apiToken });
-
-    if (success) {
-      res.json({ success: true, message: "Jira configured successfully" });
-    } else {
-      res.status(500).json({ error: "Failed to configure Jira. Check credentials." });
+    // Test the connection first
+    const testResult = await jiraService.testConnection({ baseUrl, email, apiToken });
+    if (!testResult.success) {
+      return res.status(400).json({ error: testResult.error || "Failed to connect to Jira" });
     }
+
+    // Save config to user
+    await storage.updateUserJiraConfig(userId, { baseUrl, email, apiToken });
+
+    res.json({ success: true, message: "Jira configured successfully", user: testResult.user });
   } catch (error: any) {
     console.error("Error configuring Jira:", error);
     res.status(500).json({ error: error.message || "Failed to configure Jira" });
   }
 });
 
-// Test Jira connection
+// Disconnect Jira for current user
+jiraRouter.post("/disconnect", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    await storage.updateUserJiraConfig(userId, null);
+    res.json({ success: true, message: "Jira disconnected successfully" });
+  } catch (error: any) {
+    console.error("Error disconnecting Jira:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test Jira connection for current user
 jiraRouter.get("/test", async (req, res) => {
   try {
-    const result = await jiraService.testConnection();
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
+      return res.status(400).json({ success: false, error: "Jira not configured" });
+    }
+
+    const result = await jiraService.testConnection(config);
     res.json(result);
   } catch (error: any) {
     console.error("Error testing Jira connection:", error);
@@ -46,14 +91,20 @@ jiraRouter.get("/test", async (req, res) => {
   }
 });
 
-// Get Jira projects
+// Get Jira projects for current user
 jiraRouter.get("/projects", async (req, res) => {
   try {
-    if (!jiraService.isConfigured()) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
       return res.status(400).json({ error: "Jira not configured" });
     }
 
-    const projects = await jiraService.getProjects();
+    const projects = await jiraService.getProjects(config);
     res.json(projects);
   } catch (error: any) {
     console.error("Error fetching Jira projects:", error);
@@ -64,11 +115,17 @@ jiraRouter.get("/projects", async (req, res) => {
 // Get issue types for a project
 jiraRouter.get("/projects/:projectKey/issue-types", async (req, res) => {
   try {
-    if (!jiraService.isConfigured()) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
       return res.status(400).json({ error: "Jira not configured" });
     }
 
-    const issueTypes = await jiraService.getIssueTypes(req.params.projectKey);
+    const issueTypes = await jiraService.getIssueTypes(config, req.params.projectKey);
     res.json(issueTypes);
   } catch (error: any) {
     console.error("Error fetching issue types:", error);
@@ -79,12 +136,18 @@ jiraRouter.get("/projects/:projectKey/issue-types", async (req, res) => {
 // Create Jira issue
 jiraRouter.post("/issues", async (req, res) => {
   try {
-    if (!jiraService.isConfigured()) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
       return res.status(400).json({ error: "Jira not configured" });
     }
 
-    const issue = await jiraService.createIssue(req.body);
-    res.status(201).json(issue);
+    const issue = await jiraService.createIssue(config, req.body);
+    res.json(issue);
   } catch (error: any) {
     console.error("Error creating Jira issue:", error);
     res.status(500).json({ error: error.message || "Failed to create issue" });
@@ -94,11 +157,17 @@ jiraRouter.post("/issues", async (req, res) => {
 // Get Jira issue
 jiraRouter.get("/issues/:issueKey", async (req, res) => {
   try {
-    if (!jiraService.isConfigured()) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
       return res.status(400).json({ error: "Jira not configured" });
     }
 
-    const issue = await jiraService.getIssue(req.params.issueKey);
+    const issue = await jiraService.getIssue(config, req.params.issueKey);
     res.json(issue);
   } catch (error: any) {
     console.error("Error fetching Jira issue:", error);
@@ -109,12 +178,18 @@ jiraRouter.get("/issues/:issueKey", async (req, res) => {
 // Update Jira issue
 jiraRouter.put("/issues/:issueKey", async (req, res) => {
   try {
-    if (!jiraService.isConfigured()) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
       return res.status(400).json({ error: "Jira not configured" });
     }
 
-    await jiraService.updateIssue(req.params.issueKey, req.body.fields);
-    res.json({ success: true });
+    const result = await jiraService.updateIssue(config, req.params.issueKey, req.body);
+    res.json(result);
   } catch (error: any) {
     console.error("Error updating Jira issue:", error);
     res.status(500).json({ error: error.message || "Failed to update issue" });
@@ -124,12 +199,18 @@ jiraRouter.put("/issues/:issueKey", async (req, res) => {
 // Search Jira issues
 jiraRouter.post("/search", async (req, res) => {
   try {
-    if (!jiraService.isConfigured()) {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const config = await storage.getUserJiraConfig(userId);
+    if (!config) {
       return res.status(400).json({ error: "Jira not configured" });
     }
 
     const { jql, maxResults } = req.body;
-    const issues = await jiraService.searchIssues(jql, maxResults);
+    const issues = await jiraService.searchIssues(config, jql, maxResults);
     res.json(issues);
   } catch (error: any) {
     console.error("Error searching Jira issues:", error);

@@ -67,7 +67,7 @@ export default function CalendarPage() {
 
   // Disconnect Google Calendar mutation
   const disconnectGoogleMutation = useMutation({
-    mutationFn: () => calendar.disconnectGoogle(),
+    mutationFn: () => calendarApi.disconnectGoogle(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["google-calendar-status"] });
       toast({ title: "Disconnected", description: "Google Calendar has been disconnected." });
@@ -81,7 +81,7 @@ export default function CalendarPage() {
   const removeDuplicatesMutation = useMutation({
     mutationFn: () => {
       if (!selectedProjectId) throw new Error("No project selected");
-      return calendar.removeDuplicates(selectedProjectId);
+      return calendarApi.removeDuplicates(selectedProjectId);
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["calendar-events"] });

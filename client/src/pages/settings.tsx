@@ -4,20 +4,87 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Moon, Sun, Shield, FileJson, Zap, Mail } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Download, Moon, Sun, Shield, FileJson, Zap, Mail, Calendar, CheckCircle2, XCircle } from "lucide-react";
+import { jira } from "@/lib/api";
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [settings, setSettings] = useState({
     strictJson: true,
     requireEvidence: true,
     autoJira: false,
     autoFollowUp: false,
   });
+
+  const [jiraConfig, setJiraConfig] = useState({
+    baseUrl: "",
+    email: "",
+    apiToken: "",
+  });
+
+  // Check Google Calendar status
+  const { data: googleStatus } = useQuery({
+    queryKey: ["google-calendar-status"],
+    queryFn: () => fetch("/api/calendar/google/status").then(r => r.json()),
+  });
+
+  // Check Jira status
+  const { data: jiraStatus } = useQuery({
+    queryKey: ["jira-status"],
+    queryFn: () => jira.getStatus(),
+  });
+
+  // Configure Jira mutation
+  const configureJiraMutation = useMutation({
+    mutationFn: (config: { baseUrl: string; email: string; apiToken: string }) => 
+      jira.saveConfig(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jira-status"] });
+      toast({ title: "Jira Connected", description: "Your Jira account has been connected successfully." });
+      setJiraConfig({ baseUrl: "", email: "", apiToken: "" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Connection Failed", 
+        description: error.message || "Failed to connect to Jira. Check your credentials.",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  // Disconnect Jira mutation
+  const disconnectJiraMutation = useMutation({
+    mutationFn: () => fetch("/api/jira/disconnect", { method: "POST" }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jira-status"] });
+      toast({ title: "Jira Disconnected", description: "Your Jira account has been disconnected." });
+    },
+  });
+
+  const handleJiraConnect = () => {
+    if (!jiraConfig.baseUrl || !jiraConfig.email || !jiraConfig.apiToken) {
+      toast({ 
+        title: "Missing Information", 
+        description: "Please fill in all Jira fields.",
+        variant: "destructive" 
+      });
+      return;
+    }
+    configureJiraMutation.mutate(jiraConfig);
+  };
+
+  const handleGoogleCalendarConnect = () => {
+    if (googleStatus?.authUrl) {
+      window.location.href = googleStatus.authUrl;
+    }
+  };
 
   const toggleSetting = (key: keyof typeof settings) => {
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -29,6 +96,135 @@ export default function Settings() {
       <AppHeader title="Settings" />
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-2xl mx-auto space-y-6">
+          <Card data-testid="card-integrations">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Integrations</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Connect your Google Calendar and Jira accounts</p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Google Calendar */}
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-md bg-primary/10 p-2 mt-0.5">
+                    <Calendar className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Google Calendar</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {googleStatus?.configured ? (
+                        <span className="flex items-center gap-1 text-green-600">
+                          <CheckCircle2 className="h-3 w-3" /> Connected
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <XCircle className="h-3 w-3" /> Not connected
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant={googleStatus?.configured ? "outline" : "default"}
+                  size="sm"
+                  onClick={handleGoogleCalendarConnect}
+                >
+                  {googleStatus?.configured ? "Reconnect" : "Connect"}
+                </Button>
+              </div>
+              
+              <Separator />
+              
+              {/* Jira */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-md bg-primary/10 p-2 mt-0.5">
+                      <svg className="h-4 w-4 text-primary" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Jira</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {jiraStatus?.configured ? (
+                          <span className="flex items-center gap-1 text-green-600">
+                            <CheckCircle2 className="h-3 w-3" /> Connected to {jiraStatus.baseUrl}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1">
+                            <XCircle className="h-3 w-3" /> Not connected
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {jiraStatus?.configured && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => disconnectJiraMutation.mutate()}
+                    >
+                      Disconnect
+                    </Button>
+                  )}
+                </div>
+                
+                {!jiraStatus?.configured && (
+                  <div className="space-y-2 pl-11">
+                    <div>
+                      <Label className="text-xs">Jira URL</Label>
+                      <Input
+                        placeholder="https://your-company.atlassian.net"
+                        value={jiraConfig.baseUrl}
+                        onChange={(e) => setJiraConfig({ ...jiraConfig, baseUrl: e.target.value })}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Email</Label>
+                      <Input
+                        type="email"
+                        placeholder="your-email@company.com"
+                        value={jiraConfig.email}
+                        onChange={(e) => setJiraConfig({ ...jiraConfig, email: e.target.value })}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">API Token</Label>
+                      <Input
+                        type="password"
+                        placeholder="Your Jira API token"
+                        value={jiraConfig.apiToken}
+                        onChange={(e) => setJiraConfig({ ...jiraConfig, apiToken: e.target.value })}
+                        className="h-8 text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Get your API token from{" "}
+                        <a 
+                          href="https://id.atlassian.com/manage-profile/security/api-tokens" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          Atlassian Account Settings
+                        </a>
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleJiraConnect}
+                      disabled={configureJiraMutation.isPending}
+                      className="w-full"
+                    >
+                      {configureJiraMutation.isPending ? "Connecting..." : "Connect Jira"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card data-testid="card-analysis-settings">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Analysis Settings</CardTitle>

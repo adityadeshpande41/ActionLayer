@@ -12,6 +12,10 @@ export const users = sqliteTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   email: text("email"),
+  googleCalendarToken: text("google_calendar_token"), // Store encrypted token JSON
+  jiraBaseUrl: text("jira_base_url"), // User's Jira instance URL
+  jiraEmail: text("jira_email"), // User's Jira email
+  jiraApiToken: text("jira_api_token"), // User's Jira API token
   createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()).notNull(),
 });
 
@@ -152,3 +156,19 @@ export const calendarEvents = sqliteTable("calendar_events", {
 export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
+
+// User Integrations - Store per-user OAuth tokens and API credentials
+export const userIntegrations = sqliteTable("user_integrations", {
+  id: text("id").primaryKey().$defaultFn(generateId),
+  userId: text("user_id").notNull().references(() => users.id),
+  provider: text("provider").notNull(), // 'google_calendar', 'jira', 'slack', etc.
+  credentials: text("credentials").notNull(), // Encrypted JSON with tokens/keys
+  metadata: text("metadata", { mode: "json" }), // Additional config (email, base URL, etc.)
+  isActive: integer("is_active", { mode: "boolean" }).default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(() => new Date()).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(() => new Date()).notNull(),
+});
+
+export const insertUserIntegrationSchema = createInsertSchema(userIntegrations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserIntegration = z.infer<typeof insertUserIntegrationSchema>;
+export type UserIntegration = typeof userIntegrations.$inferSelect;
