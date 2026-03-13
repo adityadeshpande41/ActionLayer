@@ -502,18 +502,23 @@ export class SqliteStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = {
-      ...insertUser,
+    const now = sql`CURRENT_TIMESTAMP`;
+    
+    await db.insert(users).values({
       id,
+      username: insertUser.username,
+      password: insertUser.password,
       email: insertUser.email || null,
       googleCalendarToken: null,
       jiraBaseUrl: null,
       jiraEmail: null,
       jiraApiToken: null,
-      createdAt: new Date(),
-    };
-    await db.insert(users).values(user);
-    return user;
+      createdAt: now,
+    });
+    
+    // Fetch the created user to get the actual timestamp
+    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return result[0]!;
   }
 
   async updateUserGoogleToken(userId: string, token: string | null): Promise<void> {
@@ -583,21 +588,24 @@ export class SqliteStorage implements IStorage {
 
   async createProject(insertProject: InsertProject): Promise<Project> {
     const id = randomUUID();
-    const now = new Date();
-    const project: Project = {
-      ...insertProject,
+    const now = sql`CURRENT_TIMESTAMP`;
+    
+    await db.insert(projects).values({
       id,
+      name: insertProject.name,
       description: insertProject.description || null,
+      ownerId: insertProject.ownerId,
       createdAt: now,
       updatedAt: now,
-    };
-    await db.insert(projects).values(project);
-    return project;
+    });
+    
+    const result = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+    return result[0]!;
   }
 
   async updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined> {
     await db.update(projects)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(projects.id, id));
     return this.getProject(id);
   }
@@ -614,15 +622,19 @@ export class SqliteStorage implements IStorage {
 
   async createTranscript(insertTranscript: InsertTranscript): Promise<Transcript> {
     const id = randomUUID();
-    const transcript: Transcript = {
-      ...insertTranscript,
+    
+    await db.insert(transcripts).values({
       id,
+      projectId: insertTranscript.projectId,
+      userId: insertTranscript.userId,
+      content: insertTranscript.content,
       meetingType: insertTranscript.meetingType || null,
       fileName: insertTranscript.fileName || null,
-      createdAt: new Date(),
-    };
-    await db.insert(transcripts).values(transcript);
-    return transcript;
+      createdAt: sql`CURRENT_TIMESTAMP`,
+    });
+    
+    const result = await db.select().from(transcripts).where(eq(transcripts.id, id)).limit(1);
+    return result[0]!;
   }
 
   // Analyses
@@ -647,19 +659,23 @@ export class SqliteStorage implements IStorage {
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
     const id = randomUUID();
-    const analysis: Analysis = {
-      ...insertAnalysis,
+    
+    await db.insert(analyses).values({
       id,
-      summary: insertAnalysis.summary || null,
       transcriptId: insertAnalysis.transcriptId || null,
+      projectId: insertAnalysis.projectId,
+      userId: insertAnalysis.userId,
+      inputType: insertAnalysis.inputType,
+      summary: insertAnalysis.summary || null,
       status: insertAnalysis.status || "completed",
       decisionsCount: insertAnalysis.decisionsCount || null,
       risksCount: insertAnalysis.risksCount || null,
       blockersCount: insertAnalysis.blockersCount || null,
-      createdAt: new Date(),
-    };
-    await db.insert(analyses).values(analysis);
-    return analysis;
+      createdAt: sql`CURRENT_TIMESTAMP`,
+    });
+    
+    const result = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
+    return result[0]!;
   }
 
   async updateAnalysis(id: string, updates: Partial<InsertAnalysis>): Promise<Analysis | undefined> {
@@ -689,17 +705,21 @@ export class SqliteStorage implements IStorage {
 
   async createDecision(insertDecision: InsertDecision): Promise<Decision> {
     const id = randomUUID();
-    const decision: Decision = {
-      ...insertDecision,
+    
+    await db.insert(decisions).values({
       id,
+      analysisId: insertDecision.analysisId,
+      projectId: insertDecision.projectId,
+      decision: insertDecision.decision,
       owner: insertDecision.owner || null,
       rationale: insertDecision.rationale || null,
       confidence: insertDecision.confidence || null,
       evidence: insertDecision.evidence || null,
-      createdAt: new Date(),
-    };
-    await db.insert(decisions).values(decision);
-    return decision;
+      createdAt: sql`CURRENT_TIMESTAMP`,
+    });
+    
+    const result = await db.select().from(decisions).where(eq(decisions.id, id)).limit(1);
+    return result[0]!;
   }
 
   // Risks
@@ -720,10 +740,14 @@ export class SqliteStorage implements IStorage {
 
   async createRisk(insertRisk: InsertRisk): Promise<Risk> {
     const id = randomUUID();
-    const now = new Date();
-    const risk: Risk = {
-      ...insertRisk,
+    const now = sql`CURRENT_TIMESTAMP`;
+    
+    await db.insert(risks).values({
       id,
+      analysisId: insertRisk.analysisId,
+      projectId: insertRisk.projectId,
+      risk: insertRisk.risk,
+      severity: insertRisk.severity,
       owner: insertRisk.owner || null,
       likelihood: insertRisk.likelihood || null,
       impact: insertRisk.impact || null,
@@ -733,9 +757,10 @@ export class SqliteStorage implements IStorage {
       mentions: 1,
       createdAt: now,
       lastSeen: now,
-    };
-    await db.insert(risks).values(risk);
-    return risk;
+    });
+    
+    const result = await db.select().from(risks).where(eq(risks.id, id)).limit(1);
+    return result[0]!;
   }
 
   // Action Items
@@ -749,17 +774,21 @@ export class SqliteStorage implements IStorage {
 
   async createActionItem(insertActionItem: InsertActionItem): Promise<ActionItem> {
     const id = randomUUID();
-    const actionItem: ActionItem = {
-      ...insertActionItem,
+    
+    await db.insert(actionItems).values({
       id,
+      analysisId: insertActionItem.analysisId,
+      projectId: insertActionItem.projectId,
+      action: insertActionItem.action,
       owner: insertActionItem.owner || null,
       dueDate: insertActionItem.dueDate || null,
       status: insertActionItem.status || null,
       priority: insertActionItem.priority || null,
-      createdAt: new Date(),
-    };
-    await db.insert(actionItems).values(actionItem);
-    return actionItem;
+      createdAt: sql`CURRENT_TIMESTAMP`,
+    });
+    
+    const result = await db.select().from(actionItems).where(eq(actionItems.id, id)).limit(1);
+    return result[0]!;
   }
 
   async updateActionItem(id: string, updates: Partial<InsertActionItem>): Promise<ActionItem | undefined> {
@@ -811,29 +840,35 @@ export class SqliteStorage implements IStorage {
 
   async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
     const id = randomUUID();
-    const now = new Date();
-    const event: CalendarEvent = {
-      ...insertEvent,
+    const now = sql`CURRENT_TIMESTAMP`;
+    
+    await db.insert(calendarEvents).values({
       id,
-      status: insertEvent.status || "scheduled",
-      allDay: insertEvent.allDay ?? false,
+      projectId: insertEvent.projectId,
+      userId: insertEvent.userId,
+      title: insertEvent.title,
+      description: insertEvent.description || null,
+      eventType: insertEvent.eventType,
+      startDate: insertEvent.startDate,
       endDate: insertEvent.endDate || null,
+      allDay: insertEvent.allDay ?? false,
       location: insertEvent.location || null,
       attendees: insertEvent.attendees || null,
       relatedAnalysisId: insertEvent.relatedAnalysisId || null,
       relatedActionItemId: insertEvent.relatedActionItemId || null,
+      status: insertEvent.status || "scheduled",
       reminderMinutes: insertEvent.reminderMinutes || null,
-      description: insertEvent.description || null,
       createdAt: now,
       updatedAt: now,
-    };
-    await db.insert(calendarEvents).values(event);
-    return event;
+    });
+    
+    const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
+    return result[0]!;
   }
 
   async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
     await db.update(calendarEvents)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(calendarEvents.id, id));
     return this.getCalendarEvent(id);
   }
@@ -863,22 +898,28 @@ export class SqliteStorage implements IStorage {
 
   async createUserIntegration(integration: InsertUserIntegration): Promise<UserIntegration> {
     const id = randomUUID();
-    const now = new Date();
-    const newIntegration: UserIntegration = {
-      ...integration,
+    const now = sql`CURRENT_TIMESTAMP`;
+    
+    await db.insert(userIntegrations).values({
       id,
-      isActive: integration.isActive ?? true,
+      userId: integration.userId,
+      provider: integration.provider,
+      credentials: integration.credentials,
       metadata: integration.metadata || null,
+      isActive: integration.isActive ?? true,
       createdAt: now,
       updatedAt: now,
-    };
-    await db.insert(userIntegrations).values(newIntegration);
-    return newIntegration;
+    });
+    
+    const result = await db.select().from(userIntegrations)
+      .where(eq(userIntegrations.id, id))
+      .limit(1);
+    return result[0]!;
   }
 
   async updateUserIntegration(userId: string, provider: string, updates: Partial<InsertUserIntegration>): Promise<UserIntegration | undefined> {
     await db.update(userIntegrations)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(and(
         eq(userIntegrations.userId, userId),
         eq(userIntegrations.provider, provider)
