@@ -894,27 +894,50 @@ export class SqliteStorage implements IStorage {
 
   async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
     const id = randomUUID();
-    const now = sql`CURRENT_TIMESTAMP`;
     
-    await db.insert(calendarEvents).values({
-      id,
-      projectId: insertEvent.projectId,
-      userId: insertEvent.userId,
-      title: insertEvent.title,
-      description: insertEvent.description || null,
-      eventType: insertEvent.eventType,
-      startDate: insertEvent.startDate,
-      endDate: insertEvent.endDate || null,
-      allDay: insertEvent.allDay ?? false,
-      location: insertEvent.location || null,
-      attendees: insertEvent.attendees || null,
-      relatedAnalysisId: insertEvent.relatedAnalysisId || null,
-      relatedActionItemId: insertEvent.relatedActionItemId || null,
-      status: insertEvent.status || "scheduled",
-      reminderMinutes: insertEvent.reminderMinutes || null,
-      createdAt: now,
-      updatedAt: now,
-    });
+    if (isPostgres) {
+      // Use raw SQL for PostgreSQL to avoid timestamp conversion issues
+      await (db as any).execute(sql`
+        INSERT INTO calendar_events (
+          id, project_id, user_id, title, description, event_type,
+          start_date, end_date, all_day, location, attendees,
+          related_analysis_id, related_action_item_id, status, reminder_minutes,
+          created_at, updated_at
+        ) VALUES (
+          ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
+          ${insertEvent.description || null}, ${insertEvent.eventType},
+          ${insertEvent.startDate.toISOString()}::timestamp,
+          ${insertEvent.endDate ? insertEvent.endDate.toISOString() + '::timestamp' : null},
+          ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
+          ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
+          ${insertEvent.relatedAnalysisId || null}, ${insertEvent.relatedActionItemId || null},
+          ${insertEvent.status || "scheduled"}, ${insertEvent.reminderMinutes || null},
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+      `);
+    } else {
+      // Use Drizzle ORM for SQLite
+      const now = new Date();
+      await db.insert(calendarEvents).values({
+        id,
+        projectId: insertEvent.projectId,
+        userId: insertEvent.userId,
+        title: insertEvent.title,
+        description: insertEvent.description || null,
+        eventType: insertEvent.eventType,
+        startDate: insertEvent.startDate,
+        endDate: insertEvent.endDate || null,
+        allDay: insertEvent.allDay ?? false,
+        location: insertEvent.location || null,
+        attendees: insertEvent.attendees || null,
+        relatedAnalysisId: insertEvent.relatedAnalysisId || null,
+        relatedActionItemId: insertEvent.relatedActionItemId || null,
+        status: insertEvent.status || "scheduled",
+        reminderMinutes: insertEvent.reminderMinutes || null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
     
     const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
     const event = result[0]!;
