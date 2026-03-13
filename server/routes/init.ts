@@ -6,7 +6,7 @@ export const initRouter = Router();
 // Initialize default project for user if they don't have any
 initRouter.post("/initialize", async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).session?.userId;
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }

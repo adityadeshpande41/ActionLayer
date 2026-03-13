@@ -139,3 +139,13 @@ CREATE INDEX IF NOT EXISTS idx_calendar_events_project_id ON calendar_events(pro
 CREATE INDEX IF NOT EXISTS idx_calendar_events_start_date ON calendar_events(start_date);
 CREATE INDEX IF NOT EXISTS idx_user_integrations_user_id ON user_integrations(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_integrations_provider ON user_integrations(provider);
+
+-- Session table for connect-pg-simple
+CREATE TABLE IF NOT EXISTS session (
+  sid VARCHAR NOT NULL COLLATE "default",
+  sess JSON NOT NULL,
+  expire TIMESTAMP(6) NOT NULL,
+  CONSTRAINT session_pkey PRIMARY KEY (sid)
+);
+
+CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);
