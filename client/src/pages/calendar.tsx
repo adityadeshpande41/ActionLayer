@@ -40,8 +40,12 @@ export default function CalendarPage() {
   const importGoogleMutation = useMutation({
     mutationFn: async (clearExisting: boolean = false) => {
       if (!selectedProjectId) throw new Error("No project selected");
-      const start = startOfMonth(selectedDate);
-      const end = endOfMonth(selectedDate);
+      // Import from 6 months ago to 6 months in the future
+      const start = new Date();
+      start.setMonth(start.getMonth() - 6);
+      const end = new Date();
+      end.setMonth(end.getMonth() + 6);
+      
       const response = await fetch(`/api/calendar/google/import/${selectedProjectId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

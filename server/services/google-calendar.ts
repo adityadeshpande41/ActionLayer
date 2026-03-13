@@ -191,6 +191,8 @@ class GoogleCalendarService {
     try {
       const calendar = this.getCalendarForUser(userTokenJson);
       
+      console.log(`[Google Calendar] Fetching events from ${timeMin.toISOString()} to ${timeMax.toISOString()} for calendar: ${calendarId}`);
+      
       const response = await calendar.events.list({
         calendarId: calendarId,
         timeMin: timeMin.toISOString(),
@@ -199,9 +201,15 @@ class GoogleCalendarService {
         orderBy: "startTime",
       });
 
+      console.log(`[Google Calendar] API Response: ${response.data.items?.length || 0} events found`);
+      if (response.data.items && response.data.items.length > 0) {
+        console.log(`[Google Calendar] First event:`, JSON.stringify(response.data.items[0], null, 2));
+      }
+
       return response.data.items || [];
     } catch (error: any) {
       console.error("[Google Calendar] List events error:", error);
+      console.error("[Google Calendar] Error details:", error.response?.data || error.message);
       throw new Error(`Failed to list Google Calendar events: ${error.message}`);
     }
   }

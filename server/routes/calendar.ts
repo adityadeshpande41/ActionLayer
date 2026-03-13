@@ -178,11 +178,22 @@ calendarRouter.get("/google/status", async (req, res) => {
 // List available Google Calendars
 calendarRouter.get("/google/calendars", async (req, res) => {
   try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     if (!googleCalendarService.isConfigured()) {
       return res.status(400).json({ error: "Google Calendar not configured" });
     }
 
-    const calendars = await googleCalendarService.listCalendars();
+    // Get user's Google Calendar token
+    const userToken = await storage.getUserGoogleToken(userId);
+    if (!userToken) {
+      return res.status(400).json({ error: "Google Calendar not connected. Please connect first." });
+    }
+
+    const calendars = await googleCalendarService.listCalendars(userToken);
     res.json(calendars);
   } catch (error: any) {
     console.error("Error listing Google Calendars:", error);
@@ -493,6 +504,7 @@ calendarRouter.post("/google/import/:projectId", async (req, res) => {
     );
 
     console.log(`[Google Calendar Import] Fetched ${googleEvents.length} events from Google Calendar for date range ${startDate} to ${endDate}`);
+    console.log(`[Google Calendar Import] Sample event:`, googleEvents[0] ? JSON.stringify(googleEvents[0], null, 2) : "No events found");
 
     // Import events to ActionLayer
     const importedEvents = [];
