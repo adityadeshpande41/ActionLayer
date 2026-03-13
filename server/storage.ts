@@ -812,13 +812,17 @@ export class SqliteStorage implements IStorage {
   }
 
   async getCalendarEventsByDateRange(projectId: string, startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
+    // Convert dates for PostgreSQL
+    const start = isPostgres ? startDate.toISOString() : startDate;
+    const end = isPostgres ? endDate.toISOString() : endDate;
+    
     return await db.select()
       .from(calendarEvents)
       .where(
         and(
           eq(calendarEvents.projectId, projectId),
-          gte(calendarEvents.startDate, startDate),
-          lte(calendarEvents.startDate, endDate)
+          gte(calendarEvents.startDate, start as any),
+          lte(calendarEvents.startDate, end as any)
         )
       )
       .orderBy(calendarEvents.startDate);
@@ -826,12 +830,14 @@ export class SqliteStorage implements IStorage {
 
   async getUpcomingEvents(projectId: string, limit: number = 10): Promise<CalendarEvent[]> {
     const now = new Date();
+    const nowValue = isPostgres ? now.toISOString() : now;
+    
     return await db.select()
       .from(calendarEvents)
       .where(
         and(
           eq(calendarEvents.projectId, projectId),
-          gte(calendarEvents.startDate, now),
+          gte(calendarEvents.startDate, nowValue as any),
           eq(calendarEvents.status, "scheduled")
         )
       )
