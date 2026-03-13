@@ -64,10 +64,18 @@ export async function registerRoutes(
       ssl: { rejectUnauthorized: false }
     });
     
+    // Ensure session table exists (run this once manually or via migration)
+    // CREATE TABLE "session" (
+    //   "sid" varchar NOT NULL COLLATE "default",
+    //   "sess" json NOT NULL,
+    //   "expire" timestamp(6) NOT NULL
+    // );
+    // CREATE INDEX "IDX_session_expire" ON "session" ("expire");
+    
     sessionStore = new PgSession({
       pool: pgPool,
       tableName: "session",
-      createTableIfMissing: true,
+      createTableIfMissing: false, // Table should already exist from migration
     });
     console.log("[Session] Using PostgreSQL session store");
   } else {
