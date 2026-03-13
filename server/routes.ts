@@ -93,9 +93,10 @@ export async function registerRoutes(
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       httpOnly: true,
       secure: isProduction,
-      sameSite: 'lax', // Important for same-site requests
+      sameSite: 'lax', // lax is fine for same-origin requests
     },
     name: 'actionlayer.sid', // Custom session cookie name
+    proxy: isProduction, // Trust proxy in production (Render uses proxies)
   });
 
   // Apply session middleware
