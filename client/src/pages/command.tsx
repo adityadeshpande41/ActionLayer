@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useProject } from "@/hooks/use-project";
 import { command } from "@/lib/api";
 import { Send, Loader2, Sparkles, ArrowRight, Mic, MicOff } from "lucide-react";
 
@@ -18,6 +19,7 @@ const SUGGESTED_COMMANDS = [
 
 export default function Command() {
   const { toast } = useToast();
+  const { selectedProjectId } = useProject();
   const [commandText, setCommandText] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -28,13 +30,22 @@ export default function Command() {
     const commandToExecute = cmd || commandText;
     if (!commandToExecute.trim()) return;
 
+    if (!selectedProjectId) {
+      toast({ 
+        title: "No Project Selected", 
+        description: "Please select a project first.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     setIsExecuting(true);
     setCommandText("");
     
     try {
       const response = await command.execute({
         command: commandToExecute,
-        projectId: "default-project", // TODO: Get from context
+        projectId: selectedProjectId,
       });
       
       setResult(response);

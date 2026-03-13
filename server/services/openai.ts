@@ -430,22 +430,79 @@ export async function handleCommand(command: string, context?: any): Promise<{
   response: string;
   actions: Array<{ action: string; type: string }>;
 }> {
-  const systemPrompt = `You are ActionLayer AI, a PM command assistant. 
-Interpret user commands and provide structured responses with:
-1. Intent (what the user wants)
-2. Plan (steps to accomplish it)
-3. Response (natural language answer)
-4. Proposed actions (concrete next steps)`;
+  const systemPrompt = `You are ActionLayer AI, an intelligent PM assistant with access to real project data.
 
-  const userPrompt = `Command: ${command}
-${context ? `Context: ${JSON.stringify(context)}` : ""}
+Your role is to:
+- Answer questions about project risks, decisions, action items, and calendar events
+- Provide insights based on actual project data, not generic advice
+- Identify trends, blockers, and priorities from the data
+- Suggest concrete actions based on the current project state
+
+When answering:
+- Reference specific risks, decisions, or action items from the context
+- Provide data-driven insights (e.g., "You have 3 high-severity risks...")
+- Be specific and actionable, not generic
+- If asked about risks, analyze the actual risks in the project
+- If asked about blockers, identify action items with "blocked" status or overdue items
+- If asked about changes, compare recent vs older data`;
+
+  // Build a more structured context summary
+  let contextSummary = "";
+  if (context?.project) {
+    contextSummary += `\n\nPROJECT: ${context.project.name}`;
+    
+    if (context.risks?.length > 0) {
+      contextSummary += `\n\nRISKS (${context.risks.length} total):`;
+      const highRisks = context.risks.filter((r: any) => r.severity === "High");
+      const medRisks = context.risks.filter((r: any) => r.severity === "Med");
+      const lowRisks = context.risks.filter((r: any) => r.severity === "Low");
+      
+      contextSummary += `\n- High severity: ${highRisks.length}`;
+      if (highRisks.length > 0) {
+        contextSummary += `\n  ${highRisks.slice(0, 5).map((r: any) => `• ${r.risk}`).join('\n  ')}`;
+      }
+      contextSummary += `\n- Medium severity: ${medRisks.length}`;
+      contextSummary += `\n- Low severity: ${lowRisks.length}`;
+    }
+    
+    if (context.actionItems?.length > 0) {
+      contextSummary += `\n\nACTION ITEMS (${context.actionItems.length} total):`;
+      const pending = context.actionItems.filter((a: any) => a.status === "pending");
+      const completed = context.actionItems.filter((a: any) => a.status === "completed");
+      const blocked = context.actionItems.filter((a: any) => a.status === "blocked");
+      const overdue = context.actionItems.filter((a: any) => 
+        a.dueDate && new Date(a.dueDate) < new Date() && a.status !== "completed"
+      );
+      
+      contextSummary += `\n- Pending: ${pending.length}`;
+      contextSummary += `\n- Completed: ${completed.length}`;
+      contextSummary += `\n- Blocked: ${blocked.length}`;
+      contextSummary += `\n- Overdue: ${overdue.length}`;
+      
+      if (overdue.length > 0) {
+        contextSummary += `\n  Overdue items:`;
+        contextSummary += `\n  ${overdue.slice(0, 3).map((a: any) => `• ${a.action} (due: ${new Date(a.dueDate).toLocaleDateString()})`).join('\n  ')}`;
+      }
+    }
+    
+    if (context.decisions?.length > 0) {
+      contextSummary += `\n\nDECISIONS (${context.decisions.length} total):`;
+      const recent = context.decisions
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5);
+      contextSummary += `\n  Recent decisions:`;
+      contextSummary += `\n  ${recent.map((d: any) => `• ${d.decision}`).join('\n  ')}`;
+    }
+  }
+
+  const userPrompt = `Command: ${command}${contextSummary}
 
 Respond with JSON:
 {
-  "intent": "string",
+  "intent": "what the user wants to know",
   "plan": ["step 1", "step 2", ...],
-  "response": "natural language response",
-  "actions": [{"action": "string", "type": "jira|email|escalate|report"}]
+  "response": "natural language answer based on ACTUAL project data above",
+  "actions": [{"action": "concrete next step", "type": "meeting|report|jira|email"}]
 }`;
 
   const completion = await openai.chat.completions.create({
