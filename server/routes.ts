@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 import { storage } from "./storage";
 import { authRouter } from "./routes/auth";
 import { projectsRouter } from "./routes/projects";
@@ -12,8 +14,31 @@ import { initRouter } from "./routes/init";
 import { calendarRouter } from "./routes/calendar";
 import { jiraRouter } from "./routes/jira";
 
+const PgSession = connectPgSimple(session);
+
+// Session store configuration
+const isProduction = process.env.NODE_ENV === "production";
+const databaseUrl = process.env.DATABASE_URL;
+
+let sessionStore: any;
+
+if (isProduction && databaseUrl?.startsWith("postgres")) {
+  // Use PostgreSQL session store in production
+  const pgPool = new pg.Pool({ connectionString: databaseUrl });
+  sessionStore = new PgSession({
+    pool: pgPool,
+    tableName: "session",
+    createTableIfMissing: true,
+  });
+  console.log("[Session] Using PostgreSQL session store");
+} else {
+  // Use memory store in development (default)
+  console.log("[Session] Using memory session store");
+}
+
 // Session middleware
 const sessionMiddleware = session({
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || "your-secret-key-change-in-production",
   resave: false,
   saveUninitialized: false,
