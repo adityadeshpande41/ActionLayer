@@ -82,12 +82,16 @@ class GoogleCalendarService {
     return this.oauth2Client !== null;
   }
 
-  getAuthUrl(): string | null {
+  getAuthUrl(userId?: string): string | null {
     if (!this.oauth2Client) return null;
+
+    const state = userId ? Buffer.from(JSON.stringify({ userId })).toString('base64') : undefined;
 
     return this.oauth2Client.generateAuthUrl({
       access_type: "offline",
       scope: SCOPES,
+      prompt: "consent", // Force consent screen to get refresh token
+      state,
     });
   }
 

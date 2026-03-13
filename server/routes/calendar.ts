@@ -171,7 +171,7 @@ calendarRouter.get("/google/status", async (req, res) => {
   
   res.json({
     configured: isConfigured && userConnected,
-    authUrl: isConfigured ? googleCalendarService.getAuthUrl() : null,
+    authUrl: isConfigured ? googleCalendarService.getAuthUrl(userId) : null,
   });
 });
 
@@ -209,15 +209,26 @@ calendarRouter.post("/google/disconnect", async (req, res) => {
 // Handle OAuth callback (GET request from Google redirect)
 calendarRouter.get("/google/callback", async (req, res) => {
   try {
-    const { code } = req.query;
-    const userId = (req as any).user?.id;
+    const { code, state } = req.query;
     
     if (!code || typeof code !== 'string') {
       return res.status(400).send("Authorization code required");
     }
 
+    // Try to get userId from state parameter first (for OAuth redirect)
+    let userId = (req as any).user?.id;
+    
+    if (!userId && state && typeof state === 'string') {
+      try {
+        const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+        userId = decoded.userId;
+      } catch (error) {
+        console.error("[Google Calendar] Failed to decode state:", error);
+      }
+    }
+
     if (!userId) {
-      return res.redirect("/calendar?google_error=not_logged_in");
+      return res.redirect("/?google_error=not_logged_in");
     }
 
     const { tokens } = await googleCalendarService.handleAuthCallback(code);
