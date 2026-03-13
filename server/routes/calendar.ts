@@ -270,15 +270,30 @@ calendarRouter.get("/google/callback", async (req, res) => {
               ? `${gEvent.description.substring(0, 500)} [Google Calendar: ${gEvent.id}]`
               : `[Google Calendar: ${gEvent.id}]`;
             
+            // Parse dates properly - handle both dateTime and date formats
+            const isAllDay = !gEvent.start?.dateTime;
+            let startDate: Date;
+            let endDate: Date | undefined;
+            
+            if (isAllDay) {
+              // For all-day events, use date at midnight UTC
+              startDate = new Date(gEvent.start.date + 'T00:00:00.000Z');
+              endDate = gEvent.end ? new Date(gEvent.end.date + 'T00:00:00.000Z') : undefined;
+            } else {
+              // For timed events, use dateTime directly
+              startDate = new Date(gEvent.start.dateTime);
+              endDate = gEvent.end?.dateTime ? new Date(gEvent.end.dateTime) : undefined;
+            }
+            
             const eventData = {
               projectId,
               userId,
               title: gEvent.summary || "Untitled Event",
               description,
               eventType: "meeting" as const,
-              startDate: new Date(gEvent.start?.dateTime || gEvent.start?.date),
-              endDate: gEvent.end ? new Date(gEvent.end?.dateTime || gEvent.end?.date) : undefined,
-              allDay: !gEvent.start?.dateTime,
+              startDate,
+              endDate,
+              allDay: isAllDay,
               location: gEvent.location || undefined,
               attendees: gEvent.attendees?.map((a: any) => a.email) || undefined,
               status: "scheduled" as const,
@@ -346,15 +361,30 @@ calendarRouter.post("/google/auth", async (req, res) => {
               ? `${gEvent.description.substring(0, 500)} [Google Calendar: ${gEvent.id}]`
               : `[Google Calendar: ${gEvent.id}]`;
             
+            // Parse dates properly - handle both dateTime and date formats
+            const isAllDay = !gEvent.start?.dateTime;
+            let startDate: Date;
+            let endDate: Date | undefined;
+            
+            if (isAllDay) {
+              // For all-day events, use date at midnight UTC
+              startDate = new Date(gEvent.start.date + 'T00:00:00.000Z');
+              endDate = gEvent.end ? new Date(gEvent.end.date + 'T00:00:00.000Z') : undefined;
+            } else {
+              // For timed events, use dateTime directly
+              startDate = new Date(gEvent.start.dateTime);
+              endDate = gEvent.end?.dateTime ? new Date(gEvent.end.dateTime) : undefined;
+            }
+            
             const eventData = {
               projectId,
               userId,
               title: gEvent.summary || "Untitled Event",
               description,
               eventType: "meeting" as const,
-              startDate: new Date(gEvent.start?.dateTime || gEvent.start?.date),
-              endDate: gEvent.end ? new Date(gEvent.end?.dateTime || gEvent.end?.date) : undefined,
-              allDay: !gEvent.start?.dateTime,
+              startDate,
+              endDate,
+              allDay: isAllDay,
               location: gEvent.location || undefined,
               attendees: gEvent.attendees?.map((a: any) => a.email) || undefined,
               status: "scheduled" as const,
@@ -542,15 +572,30 @@ calendarRouter.post("/google/import/:projectId", async (req, res) => {
           ? `${cleanDescription} ${importMarker}`
           : importMarker;
         
+        // Parse dates properly - handle both dateTime and date formats
+        const isAllDay = !gEvent.start.dateTime;
+        let startDate: Date;
+        let endDate: Date | undefined;
+        
+        if (isAllDay) {
+          // For all-day events, use date at midnight UTC
+          startDate = new Date(gEvent.start.date + 'T00:00:00.000Z');
+          endDate = gEvent.end ? new Date(gEvent.end.date + 'T00:00:00.000Z') : undefined;
+        } else {
+          // For timed events, use dateTime directly
+          startDate = new Date(gEvent.start.dateTime);
+          endDate = gEvent.end?.dateTime ? new Date(gEvent.end.dateTime) : undefined;
+        }
+        
         const event = await storage.createCalendarEvent({
           projectId: req.params.projectId,
           userId,
           title: gEvent.summary || "Untitled Event",
           description: cleanDescription,
           eventType: "meeting",
-          startDate: new Date(gEvent.start.dateTime || gEvent.start.date),
-          endDate: gEvent.end ? new Date(gEvent.end.dateTime || gEvent.end.date) : undefined,
-          allDay: !!gEvent.start.date,
+          startDate,
+          endDate,
+          allDay: isAllDay,
           location: gEvent.location,
           status: "scheduled",
         });
