@@ -963,6 +963,10 @@ export class SqliteStorage implements IStorage {
     
     if (isPostgres) {
       // Use raw SQL for PostgreSQL to avoid timestamp conversion issues
+      const endDateValue = insertEvent.endDate 
+        ? sql`${insertEvent.endDate.toISOString()}::timestamp`
+        : sql`NULL`;
+      
       await (db as any).execute(sql`
         INSERT INTO calendar_events (
           id, project_id, user_id, title, description, event_type,
@@ -973,7 +977,7 @@ export class SqliteStorage implements IStorage {
           ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
           ${insertEvent.description || null}, ${insertEvent.eventType},
           ${insertEvent.startDate.toISOString()}::timestamp,
-          ${insertEvent.endDate ? insertEvent.endDate.toISOString() + '::timestamp' : null},
+          ${endDateValue},
           ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
           ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
           ${insertEvent.relatedAnalysisId || null}, ${insertEvent.relatedActionItemId || null},
