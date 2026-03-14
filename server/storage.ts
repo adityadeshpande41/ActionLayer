@@ -492,6 +492,26 @@ export class MemStorage implements IStorage {
 export class SqliteStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
+    if (isPostgres) {
+      const result: any = await (db as any).execute(sql`
+        SELECT *, COALESCE(created_at, NOW()) as created_at
+        FROM users WHERE id = ${id} LIMIT 1
+      `);
+      const rows = result.rows || result;
+      if (!rows[0]) return undefined;
+      const u = rows[0];
+      return {
+        id: u.id,
+        username: u.username,
+        password: u.password,
+        email: u.email,
+        googleCalendarToken: u.google_calendar_token,
+        jiraBaseUrl: u.jira_base_url,
+        jiraEmail: u.jira_email,
+        jiraApiToken: u.jira_api_token,
+        createdAt: new Date(u.created_at),
+      } as User;
+    }
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0];
   }

@@ -133,6 +133,7 @@ authRouter.get("/me", async (req, res) => {
       id: user.id,
       username: user.username,
       email: user.email,
+      createdAt: user.createdAt,
     });
   } catch (error) {
     console.error("Error fetching user:", error);
