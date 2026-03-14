@@ -50,6 +50,7 @@ export default function Analyze() {
   const [file, setFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [showNewAnalysis, setShowNewAnalysis] = useState(false);
   const [jiraStories, setJiraStories] = useState<any>(null);
   const [followUpEmails, setFollowUpEmails] = useState<any>(null);
   const [weeklyStatus, setWeeklyStatus] = useState<any>(null);
@@ -71,6 +72,13 @@ export default function Analyze() {
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [followUpCount, setFollowUpCount] = useState(0);
   const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null);
+
+  // Fetch past analyses for the selected project
+  const { data: pastAnalyses = [], isLoading: pastLoading } = useQuery({
+    queryKey: ["analyses", selectedProjectId],
+    queryFn: () => analyses.getByProject(selectedProjectId!),
+    enabled: !!selectedProjectId,
+  });
 
   const { data: intakeQuestions } = useQuery({
     queryKey: ["intake-questions"],
@@ -528,6 +536,86 @@ export default function Analyze() {
       <AppHeader title="Transcript Analysis" />
       <div className="flex-1 overflow-auto p-6 space-y-6">
         {!analysisResult ? (
+          !showNewAnalysis ? (
+            // History list view
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Transcript Analyses</h2>
+                  <p className="text-sm text-muted-foreground">Select a past analysis or start a new one</p>
+                </div>
+                <Button onClick={() => setShowNewAnalysis(true)}>
+                  <Play className="h-4 w-4 mr-1.5" />
+                  New Analysis
+                </Button>
+              </div>
+
+              {pastLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : pastAnalyses.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                    <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-sm font-medium mb-1">No analyses yet</p>
+                    <p className="text-xs text-muted-foreground mb-4">Run your first transcript analysis to get started</p>
+                    <Button onClick={() => setShowNewAnalysis(true)}>
+                      <Play className="h-4 w-4 mr-1.5" />
+                      New Analysis
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  {pastAnalyses.map((analysis: any) => {
+                    const createdAt = new Date(analysis.createdAt);
+                    const dateStr = createdAt.getFullYear() > 1970
+                      ? createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                      : "Unknown date";
+                    const displayName = analysis.name || `Analysis #${analysis.id.slice(0, 8)}`;
+                    return (
+                      <Card
+                        key={analysis.id}
+                        className="cursor-pointer hover:border-primary/50 transition-colors"
+                        onClick={() => loadAnalysis(analysis.id)}
+                      >
+                        <CardContent className="flex items-center gap-4 p-4">
+                          <div className="rounded-full bg-primary/10 p-2 shrink-0">
+                            <FileText className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{displayName}</p>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                              <span>{dateStr}</span>
+                              <span>·</span>
+                              <span>{analysis.decisionsCount || 0} decisions</span>
+                              <span>·</span>
+                              <span>{analysis.risksCount || 0} risks</span>
+                              <span>·</span>
+                              <span>{analysis.blockersCount || 0} blockers</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge variant="outline" className="text-[10px] capitalize">{analysis.inputType}</Badge>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+          // New analysis form
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={() => setShowNewAnalysis(false)}>
+                ← Back
+              </Button>
+              <h2 className="text-lg font-semibold">New Analysis</h2>
+            </div>
           <Card>
             <CardContent className="p-6">
               <Tabs value={inputTab} onValueChange={setInputTab}>
@@ -664,6 +752,8 @@ export default function Analyze() {
               </Tabs>
             </CardContent>
           </Card>
+          </div>
+          )
         ) : (
           <>
             <div className="flex items-center justify-between">
@@ -705,8 +795,8 @@ export default function Analyze() {
                   {isGeneratingChanges ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <TrendingUp className="h-4 w-4 mr-1.5" />}
                   What Changed?
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setAnalysisResult(null); setJiraStories(null); setFollowUpEmails(null); setWeeklyStatus(null); setWhatChanged(null); setActionsApproved(false); setIntakeStep(0); setIntakeAnswers({}); }}>
-                  New Analysis
+                <Button variant="outline" size="sm" onClick={() => { setAnalysisResult(null); setShowNewAnalysis(false); setJiraStories(null); setFollowUpEmails(null); setWeeklyStatus(null); setWhatChanged(null); setActionsApproved(false); setIntakeStep(0); setIntakeAnswers({}); queryClient.invalidateQueries({ queryKey: ["analyses", selectedProjectId] }); }}>
+                  ← Back to Analyses
                 </Button>
               </div>
             </div>
