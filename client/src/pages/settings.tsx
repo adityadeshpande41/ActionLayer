@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -10,18 +10,25 @@ import { useTheme } from "@/components/theme-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Download, Moon, Sun, Shield, FileJson, Zap, Mail, Calendar, CheckCircle2, XCircle } from "lucide-react";
-import { jira } from "@/lib/api";
+import { jira, analyses, projects } from "@/lib/api";
+import { useProject } from "@/hooks/use-project";
+
+const SETTINGS_KEY = "actionlayer_settings";
+
+export function loadAnalysisSettings() {
+  try {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return { strictJson: true, requireEvidence: true, autoJira: false, autoFollowUp: false };
+}
 
 export default function Settings() {
   const { theme, toggleTheme } = useTheme();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [settings, setSettings] = useState({
-    strictJson: true,
-    requireEvidence: true,
-    autoJira: false,
-    autoFollowUp: false,
-  });
+  const { selectedProjectId } = useProject();
+  const [settings, setSettings] = useState(loadAnalysisSettings);
 
   const [jiraConfig, setJiraConfig] = useState({
     baseUrl: "",
@@ -87,8 +94,38 @@ export default function Settings() {
   };
 
   const toggleSetting = (key: keyof typeof settings) => {
-    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
-    toast({ title: "Setting updated", description: `${key} has been toggled.` });
+    const updated = { ...settings, [key]: !settings[key] };
+    setSettings(updated);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+    toast({ title: "Setting saved", description: `${key} has been updated.` });
+  };
+
+  const handleExport = async () => {
+    try {
+      if (!selectedProjectId) {
+        toast({ title: "No project selected", description: "Please select a project to export.", variant: "destructive" });
+        return;
+      }
+      // Fetch all project data
+      const [projectAnalyses] = await Promise.all([
+        analyses.getByProject(selectedProjectId),
+      ]);
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        projectId: selectedProjectId,
+        analyses: projectAnalyses,
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `actionlayer-export-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export complete", description: "Your data has been downloaded." });
+    } catch (error: any) {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    }
   };
 
   return (
@@ -351,7 +388,7 @@ export default function Settings() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => toast({ title: "Export started", description: "Your data export is being prepared." })}
+                  onClick={handleExport}
                   data-testid="button-export-data"
                 >
                   <Download className="h-3.5 w-3.5 mr-1.5" />

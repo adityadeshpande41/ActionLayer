@@ -16,6 +16,7 @@ import { useProject } from "@/hooks/use-project";
 import { analyses, approvals, calendar, jira } from "@/lib/api";
 import { Upload, Play, Loader2, AlertTriangle, CheckCircle2, Ban, Copy, MessageSquare, ChevronRight, Lightbulb, ArrowRight, FileText, Mail, TrendingUp, Calendar as CalendarIcon } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { loadAnalysisSettings } from "./settings";
 
 function SeverityBadge({ severity }: { severity: string }) {
   const variants: Record<string, string> = {
@@ -152,6 +153,24 @@ export default function Analyze() {
       });
       setResultsTab("summary");
       toast({ title: "Analysis Complete", description: "Transcript processed successfully." });
+
+      // Auto-generate based on settings
+      const settings = loadAnalysisSettings();
+      const analysisId = result.analysis.id;
+      if (settings.autoJira) {
+        try {
+          const jiraResult = await analyses.generateJira(analysisId);
+          setJiraStories({ stories: jiraResult.jiraDrafts });
+          toast({ title: "Jira Drafts Ready", description: "Auto-generated Jira stories from analysis." });
+        } catch {}
+      }
+      if (settings.autoFollowUp) {
+        try {
+          const followUpResult = await analyses.generateFollowUp(analysisId);
+          setFollowUpEmails(followUpResult.emails);
+          toast({ title: "Follow-up Emails Ready", description: "Auto-generated follow-up emails." });
+        } catch {}
+      }
     } catch (error: any) {
       toast({ title: "Analysis Failed", description: error.message, variant: "destructive" });
     } finally {
