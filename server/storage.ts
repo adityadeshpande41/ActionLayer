@@ -665,14 +665,15 @@ export class SqliteStorage implements IStorage {
       .orderBy(desc(analyses.createdAt))
       .limit(limit);
     
-    // Convert ISO strings back to Date objects for PostgreSQL
     if (isPostgres) {
       return results.map((analysis: any) => ({
         ...analysis,
-        createdAt: new Date(analysis.createdAt),
+        createdAt: analysis.createdAt ? new Date(analysis.createdAt) : new Date(),
       })) as Analysis[];
     }
     
+    return results;
+  }
     return results;
   }
 

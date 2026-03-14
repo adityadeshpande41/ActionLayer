@@ -28,6 +28,22 @@ if (isPostgres) {
   }).catch((err: any) => {
     console.error("[Database] Migration error:", err.message);
   });
+
+  // Backfill null timestamps on existing rows
+  pool.query(`
+    UPDATE analyses SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE risks SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE risks SET last_seen = NOW() WHERE last_seen IS NULL;
+    UPDATE decisions SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE action_items SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE transcripts SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE projects SET created_at = NOW() WHERE created_at IS NULL;
+    UPDATE projects SET updated_at = NOW() WHERE updated_at IS NULL;
+  `).then(() => {
+    console.log("[Database] Backfill: null timestamps fixed");
+  }).catch((err: any) => {
+    console.error("[Database] Backfill error:", err.message);
+  });
 } else {
   // SQLite for development
   const sqlite = new Database(databaseUrl || "sqlite.db");
