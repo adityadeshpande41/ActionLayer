@@ -645,10 +645,18 @@ export class SqliteStorage implements IStorage {
   }
 
   async getAnalysesByProjectId(projectId: string): Promise<Analysis[]> {
-    return await db.select()
+    const results = await db.select()
       .from(analyses)
       .where(eq(analyses.projectId, projectId))
       .orderBy(desc(analyses.createdAt));
+
+    if (isPostgres) {
+      return results.map((a: any) => ({
+        ...a,
+        createdAt: a.createdAt ? new Date(a.createdAt) : new Date(),
+      })) as Analysis[];
+    }
+    return results;
   }
 
   async getRecentAnalyses(limit: number = 10): Promise<Analysis[]> {
@@ -740,7 +748,15 @@ export class SqliteStorage implements IStorage {
   }
 
   async getRisksByProjectId(projectId: string): Promise<Risk[]> {
-    return await db.select().from(risks).where(eq(risks.projectId, projectId));
+    const results = await db.select().from(risks).where(eq(risks.projectId, projectId));
+    if (isPostgres) {
+      return results.map((r: any) => ({
+        ...r,
+        lastSeen: r.lastSeen ? new Date(r.lastSeen) : new Date(),
+        createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+      })) as Risk[];
+    }
+    return results;
   }
 
   async getTopRisks(limit: number = 5): Promise<Risk[]> {

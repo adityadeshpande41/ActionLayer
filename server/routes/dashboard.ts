@@ -3,6 +3,24 @@ import { storage } from "../storage";
 
 export const dashboardRouter = Router();
 
+// Safe date parser - returns null for invalid/epoch dates
+function safeDate(val: any): Date | null {
+  if (!val) return null;
+  const d = new Date(val);
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000) return null;
+  return d;
+}
+
+function safeDateStr(val: any, fallback = "Unknown"): string {
+  const d = safeDate(val);
+  return d ? d.toISOString().replace("T", " ").substring(0, 16) : fallback;
+}
+
+function safeDateISO(val: any, fallback = "Unknown"): string {
+  const d = safeDate(val);
+  return d ? d.toISOString().split("T")[0] : fallback;
+}
+
 // Get dashboard metrics
 dashboardRouter.get("/metrics", async (req, res) => {
   try {
@@ -82,7 +100,7 @@ dashboardRouter.get("/risk-drift", async (req, res) => {
       risk: risk.risk,
       severity: risk.severity,
       mentions: risk.mentions || 1,
-      lastSeen: new Date(risk.lastSeen).toISOString().split("T")[0],
+      lastSeen: safeDateISO(risk.lastSeen),
       trend: Array(7).fill(0).map((_, i) => Math.max(1, (risk.mentions || 1) - (6 - i))),
     }));
 
@@ -120,7 +138,11 @@ dashboardRouter.get("/recent-runs", async (req, res) => {
       projectIds.map((id) => storage.getAnalysesByProjectId(id))
     );
     const analyses = allAnalyses.flat()
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => {
+        const ta = safeDate(b.createdAt)?.getTime() ?? 0;
+        const tb = safeDate(a.createdAt)?.getTime() ?? 0;
+        return ta - tb;
+      })
       .slice(0, limit);
     
     console.log('[Dashboard] Found analyses:', analyses.length);
@@ -130,7 +152,7 @@ dashboardRouter.get("/recent-runs", async (req, res) => {
 
     const recentRuns = analyses.map((analysis) => ({
       id: analysis.id,
-      date: new Date(analysis.createdAt).toISOString().replace("T", " ").substring(0, 16),
+      date: safeDateStr(analysis.createdAt),
       project: projectMap.get(analysis.projectId) || "Unknown",
       inputType: analysis.inputType,
       outcome: analysis.risksCount && analysis.risksCount > 2 ? "Escalate" : 
