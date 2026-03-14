@@ -29,21 +29,20 @@ if (isPostgres) {
     console.error("[Database] Migration error:", err.message);
   });
 
-  // Backfill null/zero timestamps on existing rows
-  pool.query(`
-    UPDATE analyses SET created_at = NOW() WHERE created_at IS NULL OR created_at = '1970-01-01 00:00:00' OR EXTRACT(EPOCH FROM created_at) < 1000000;
-    UPDATE risks SET created_at = NOW() WHERE created_at IS NULL OR EXTRACT(EPOCH FROM created_at) < 1000000;
-    UPDATE risks SET last_seen = NOW() WHERE last_seen IS NULL OR EXTRACT(EPOCH FROM last_seen) < 1000000;
-    UPDATE decisions SET created_at = NOW() WHERE created_at IS NULL OR EXTRACT(EPOCH FROM created_at) < 1000000;
-    UPDATE action_items SET created_at = NOW() WHERE created_at IS NULL OR EXTRACT(EPOCH FROM created_at) < 1000000;
-    UPDATE transcripts SET created_at = NOW() WHERE created_at IS NULL OR EXTRACT(EPOCH FROM created_at) < 1000000;
-    UPDATE projects SET created_at = NOW() WHERE created_at IS NULL OR EXTRACT(EPOCH FROM created_at) < 1000000;
-    UPDATE projects SET updated_at = NOW() WHERE updated_at IS NULL OR EXTRACT(EPOCH FROM updated_at) < 1000000;
-  `).then(() => {
-    console.log("[Database] Backfill: null/zero timestamps fixed");
-  }).catch((err: any) => {
-    console.error("[Database] Backfill error:", err.message);
-  });
+  // Backfill null/zero timestamps on existing rows - run each separately (pg doesn't support multi-statement queries)
+  const backfillQueries = [
+    `UPDATE analyses SET created_at = NOW() WHERE created_at IS NULL OR created_at < '2020-01-01'`,
+    `UPDATE risks SET created_at = NOW() WHERE created_at IS NULL OR created_at < '2020-01-01'`,
+    `UPDATE risks SET last_seen = NOW() WHERE last_seen IS NULL OR last_seen < '2020-01-01'`,
+    `UPDATE decisions SET created_at = NOW() WHERE created_at IS NULL OR created_at < '2020-01-01'`,
+    `UPDATE action_items SET created_at = NOW() WHERE created_at IS NULL OR created_at < '2020-01-01'`,
+    `UPDATE transcripts SET created_at = NOW() WHERE created_at IS NULL OR created_at < '2020-01-01'`,
+    `UPDATE projects SET created_at = NOW() WHERE created_at IS NULL OR created_at < '2020-01-01'`,
+    `UPDATE projects SET updated_at = NOW() WHERE updated_at IS NULL OR updated_at < '2020-01-01'`,
+  ];
+  Promise.all(backfillQueries.map(q => pool.query(q)))
+    .then(() => console.log("[Database] Backfill: timestamps fixed"))
+    .catch((err: any) => console.error("[Database] Backfill error:", err.message));
 } else {
   // SQLite for development
   const sqlite = new Database(databaseUrl || "sqlite.db");
