@@ -645,34 +645,65 @@ export class SqliteStorage implements IStorage {
   }
 
   async getAnalysesByProjectId(projectId: string): Promise<Analysis[]> {
-    const results = await db.select()
+    if (isPostgres) {
+      const result: any = await (db as any).execute(sql`
+        SELECT *, COALESCE(created_at, NOW()) as created_at
+        FROM analyses
+        WHERE project_id = ${projectId}
+        ORDER BY COALESCE(created_at, NOW()) DESC
+      `);
+      const rows = result.rows || result;
+      return rows.map((a: any) => ({
+        id: a.id,
+        transcriptId: a.transcript_id,
+        projectId: a.project_id,
+        userId: a.user_id,
+        name: a.name,
+        inputType: a.input_type,
+        summary: a.summary,
+        decisionsCount: a.decisions_count,
+        risksCount: a.risks_count,
+        blockersCount: a.blockers_count,
+        status: a.status,
+        createdAt: new Date(a.created_at),
+      })) as Analysis[];
+    }
+
+    return await db.select()
       .from(analyses)
       .where(eq(analyses.projectId, projectId))
       .orderBy(desc(analyses.createdAt));
-
-    if (isPostgres) {
-      return results.map((a: any) => ({
-        ...a,
-        createdAt: a.createdAt ? new Date(a.createdAt) : new Date(),
-      })) as Analysis[];
-    }
-    return results;
   }
 
   async getRecentAnalyses(limit: number = 10): Promise<Analysis[]> {
-    const results = await db.select()
+    if (isPostgres) {
+      const result: any = await (db as any).execute(sql`
+        SELECT *, COALESCE(created_at, NOW()) as created_at
+        FROM analyses
+        ORDER BY COALESCE(created_at, NOW()) DESC
+        LIMIT ${limit}
+      `);
+      const rows = result.rows || result;
+      return rows.map((a: any) => ({
+        id: a.id,
+        transcriptId: a.transcript_id,
+        projectId: a.project_id,
+        userId: a.user_id,
+        name: a.name,
+        inputType: a.input_type,
+        summary: a.summary,
+        decisionsCount: a.decisions_count,
+        risksCount: a.risks_count,
+        blockersCount: a.blockers_count,
+        status: a.status,
+        createdAt: new Date(a.created_at),
+      })) as Analysis[];
+    }
+
+    return await db.select()
       .from(analyses)
       .orderBy(desc(analyses.createdAt))
       .limit(limit);
-    
-    if (isPostgres) {
-      return results.map((analysis: any) => ({
-        ...analysis,
-        createdAt: analysis.createdAt ? new Date(analysis.createdAt) : new Date(),
-      })) as Analysis[];
-    }
-    
-    return results;
   }
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {

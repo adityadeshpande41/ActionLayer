@@ -156,8 +156,6 @@ analysesRouter.get("/recent", async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string) || 10;
     const analyses = await storage.getRecentAnalyses(limit);
-    // Debug: log raw createdAt values
-    console.log("[Debug] Recent analyses createdAt values:", analyses.map((a: any) => ({ id: a.id.slice(0,8), createdAt: a.createdAt, type: typeof a.createdAt })));
     res.json(analyses);
   } catch (error) {
     console.error("Error fetching recent analyses:", error);
