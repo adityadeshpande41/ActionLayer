@@ -674,8 +674,6 @@ export class SqliteStorage implements IStorage {
     
     return results;
   }
-    return results;
-  }
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
     const id = randomUUID();
