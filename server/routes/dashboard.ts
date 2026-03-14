@@ -82,7 +82,7 @@ dashboardRouter.get("/risk-drift", async (req, res) => {
       risk: risk.risk,
       severity: risk.severity,
       mentions: risk.mentions || 1,
-      lastSeen: risk.lastSeen.toISOString().split("T")[0],
+      lastSeen: new Date(risk.lastSeen).toISOString().split("T")[0],
       trend: Array(7).fill(0).map((_, i) => Math.max(1, (risk.mentions || 1) - (6 - i))),
     }));
 
@@ -120,7 +120,7 @@ dashboardRouter.get("/recent-runs", async (req, res) => {
       projectIds.map((id) => storage.getAnalysesByProjectId(id))
     );
     const analyses = allAnalyses.flat()
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, limit);
     
     console.log('[Dashboard] Found analyses:', analyses.length);
@@ -130,7 +130,7 @@ dashboardRouter.get("/recent-runs", async (req, res) => {
 
     const recentRuns = analyses.map((analysis) => ({
       id: analysis.id,
-      date: analysis.createdAt.toISOString().replace("T", " ").substring(0, 16),
+      date: new Date(analysis.createdAt).toISOString().replace("T", " ").substring(0, 16),
       project: projectMap.get(analysis.projectId) || "Unknown",
       inputType: analysis.inputType,
       outcome: analysis.risksCount && analysis.risksCount > 2 ? "Escalate" : 

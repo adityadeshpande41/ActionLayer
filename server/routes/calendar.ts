@@ -111,15 +111,20 @@ calendarRouter.post("/", async (req, res) => {
     });
 
     console.log('[Calendar] Event created:', event.id);
-    // Serialize dates to ISO strings for JSON response
+    // Safely serialize dates - handle both Date objects and strings from PostgreSQL
+    const toISO = (val: any) => {
+      if (!val) return null;
+      if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString();
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? null : d.toISOString();
+    };
     const response = {
       ...event,
-      startDate: event.startDate.toISOString(),
-      endDate: event.endDate ? event.endDate.toISOString() : null,
-      createdAt: event.createdAt.toISOString(),
-      updatedAt: event.updatedAt.toISOString(),
+      startDate: toISO(event.startDate),
+      endDate: toISO(event.endDate),
+      createdAt: toISO(event.createdAt),
+      updatedAt: toISO(event.updatedAt),
     };
-    console.log('[Calendar] Sending response:', JSON.stringify(response).substring(0, 200));
     res.status(201).json(response);
   } catch (error) {
     console.error("Error creating calendar event:", error);

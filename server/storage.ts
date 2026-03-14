@@ -677,6 +677,7 @@ export class SqliteStorage implements IStorage {
       projectId: insertAnalysis.projectId,
       userId: insertAnalysis.userId,
       inputType: insertAnalysis.inputType,
+      name: insertAnalysis.name || null,
       summary: insertAnalysis.summary || null,
       status: insertAnalysis.status || "completed",
       decisionsCount: insertAnalysis.decisionsCount || null,
@@ -962,11 +963,13 @@ export class SqliteStorage implements IStorage {
     const id = randomUUID();
     
     if (isPostgres) {
-      // Use raw SQL for PostgreSQL - cast dates properly as SQL fragments
-      const startDateValue = sql`${insertEvent.startDate.toISOString()}::timestamp`;
-      const endDateValue = insertEvent.endDate 
-        ? sql`${insertEvent.endDate.toISOString()}::timestamp`
-        : sql`NULL`;
+      // Use raw SQL for PostgreSQL - pass Date objects directly, pg driver handles casting
+      const startDate = insertEvent.startDate instanceof Date 
+        ? insertEvent.startDate 
+        : new Date(insertEvent.startDate);
+      const endDate = insertEvent.endDate 
+        ? (insertEvent.endDate instanceof Date ? insertEvent.endDate : new Date(insertEvent.endDate))
+        : null;
       
       await (db as any).execute(sql`
         INSERT INTO calendar_events (
@@ -977,8 +980,8 @@ export class SqliteStorage implements IStorage {
         ) VALUES (
           ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
           ${insertEvent.description || null}, ${insertEvent.eventType},
-          ${startDateValue},
-          ${endDateValue},
+          ${startDate},
+          ${endDate},
           ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
           ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
           ${insertEvent.relatedAnalysisId || null}, ${insertEvent.relatedActionItemId || null},
