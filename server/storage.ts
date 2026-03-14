@@ -503,7 +503,7 @@ export class SqliteStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const now = sql`CURRENT_TIMESTAMP`;
+    const now = new Date();
     
     await db.insert(users).values({
       id,
@@ -589,7 +589,7 @@ export class SqliteStorage implements IStorage {
 
   async createProject(insertProject: InsertProject): Promise<Project> {
     const id = randomUUID();
-    const now = sql`CURRENT_TIMESTAMP`;
+    const now = new Date();
     
     await db.insert(projects).values({
       id,
@@ -606,7 +606,7 @@ export class SqliteStorage implements IStorage {
 
   async updateProject(id: string, updates: Partial<InsertProject>): Promise<Project | undefined> {
     await db.update(projects)
-      .set({ ...updates, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .set({ ...updates, updatedAt: new Date() })
       .where(eq(projects.id, id));
     return this.getProject(id);
   }
@@ -631,7 +631,7 @@ export class SqliteStorage implements IStorage {
       content: insertTranscript.content,
       meetingType: insertTranscript.meetingType || null,
       fileName: insertTranscript.fileName || null,
-      createdAt: sql`CURRENT_TIMESTAMP`,
+      createdAt: new Date(),
     });
     
     const result = await db.select().from(transcripts).where(eq(transcripts.id, id)).limit(1);
@@ -683,7 +683,7 @@ export class SqliteStorage implements IStorage {
       decisionsCount: insertAnalysis.decisionsCount || null,
       risksCount: insertAnalysis.risksCount || null,
       blockersCount: insertAnalysis.blockersCount || null,
-      createdAt: sql`CURRENT_TIMESTAMP`,
+      createdAt: new Date(),
     });
     
     const result = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
@@ -727,7 +727,7 @@ export class SqliteStorage implements IStorage {
       rationale: insertDecision.rationale || null,
       confidence: insertDecision.confidence || null,
       evidence: insertDecision.evidence || null,
-      createdAt: sql`CURRENT_TIMESTAMP`,
+      createdAt: new Date(),
     });
     
     const result = await db.select().from(decisions).where(eq(decisions.id, id)).limit(1);
@@ -763,7 +763,7 @@ export class SqliteStorage implements IStorage {
 
   async createRisk(insertRisk: InsertRisk): Promise<Risk> {
     const id = randomUUID();
-    const now = sql`CURRENT_TIMESTAMP`;
+    const now = new Date();
     
     await db.insert(risks).values({
       id,
@@ -807,7 +807,7 @@ export class SqliteStorage implements IStorage {
       dueDate: insertActionItem.dueDate || null,
       status: insertActionItem.status || null,
       priority: insertActionItem.priority || null,
-      createdAt: sql`CURRENT_TIMESTAMP`,
+      createdAt: new Date(),
     });
     
     const result = await db.select().from(actionItems).where(eq(actionItems.id, id)).limit(1);
@@ -961,57 +961,34 @@ export class SqliteStorage implements IStorage {
 
   async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
     const id = randomUUID();
-    
-    if (isPostgres) {
-      // Use raw SQL for PostgreSQL - pass Date objects directly, pg driver handles casting
-      const startDate = insertEvent.startDate instanceof Date 
-        ? insertEvent.startDate 
-        : new Date(insertEvent.startDate);
-      const endDate = insertEvent.endDate 
-        ? (insertEvent.endDate instanceof Date ? insertEvent.endDate : new Date(insertEvent.endDate))
-        : null;
-      
-      await (db as any).execute(sql`
-        INSERT INTO calendar_events (
-          id, project_id, user_id, title, description, event_type,
-          start_date, end_date, all_day, location, attendees,
-          related_analysis_id, related_action_item_id, status, reminder_minutes,
-          created_at, updated_at
-        ) VALUES (
-          ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
-          ${insertEvent.description || null}, ${insertEvent.eventType},
-          ${startDate},
-          ${endDate},
-          ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
-          ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
-          ${insertEvent.relatedAnalysisId || null}, ${insertEvent.relatedActionItemId || null},
-          ${insertEvent.status || "scheduled"}, ${insertEvent.reminderMinutes || null},
-          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        )
-      `);
-    } else {
-      // Use Drizzle ORM for SQLite
-      const now = new Date();
-      await db.insert(calendarEvents).values({
-        id,
-        projectId: insertEvent.projectId,
-        userId: insertEvent.userId,
-        title: insertEvent.title,
-        description: insertEvent.description || null,
-        eventType: insertEvent.eventType,
-        startDate: insertEvent.startDate,
-        endDate: insertEvent.endDate || null,
-        allDay: insertEvent.allDay ?? false,
-        location: insertEvent.location || null,
-        attendees: insertEvent.attendees || null,
-        relatedAnalysisId: insertEvent.relatedAnalysisId || null,
-        relatedActionItemId: insertEvent.relatedActionItemId || null,
-        status: insertEvent.status || "scheduled",
-        reminderMinutes: insertEvent.reminderMinutes || null,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    const now = new Date();
+
+    const startDate = insertEvent.startDate instanceof Date
+      ? insertEvent.startDate
+      : new Date(insertEvent.startDate);
+    const endDate = insertEvent.endDate
+      ? (insertEvent.endDate instanceof Date ? insertEvent.endDate : new Date(insertEvent.endDate))
+      : null;
+
+    await db.insert(calendarEvents).values({
+      id,
+      projectId: insertEvent.projectId,
+      userId: insertEvent.userId,
+      title: insertEvent.title,
+      description: insertEvent.description || null,
+      eventType: insertEvent.eventType,
+      startDate,
+      endDate,
+      allDay: insertEvent.allDay ?? false,
+      location: insertEvent.location || null,
+      attendees: insertEvent.attendees || null,
+      relatedAnalysisId: insertEvent.relatedAnalysisId || null,
+      relatedActionItemId: insertEvent.relatedActionItemId || null,
+      status: insertEvent.status || "scheduled",
+      reminderMinutes: insertEvent.reminderMinutes || null,
+      createdAt: now,
+      updatedAt: now,
+    } as any);
     
     const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
     const event = result[0]!;
@@ -1032,7 +1009,7 @@ export class SqliteStorage implements IStorage {
 
   async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
     await db.update(calendarEvents)
-      .set({ ...updates, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .set({ ...updates, updatedAt: new Date() } as any)
       .where(eq(calendarEvents.id, id));
     return this.getCalendarEvent(id);
   }
@@ -1062,8 +1039,8 @@ export class SqliteStorage implements IStorage {
 
   async createUserIntegration(integration: InsertUserIntegration): Promise<UserIntegration> {
     const id = randomUUID();
-    const now = sql`CURRENT_TIMESTAMP`;
-    
+    const now = new Date();
+
     await db.insert(userIntegrations).values({
       id,
       userId: integration.userId,
@@ -1083,7 +1060,7 @@ export class SqliteStorage implements IStorage {
 
   async updateUserIntegration(userId: string, provider: string, updates: Partial<InsertUserIntegration>): Promise<UserIntegration | undefined> {
     await db.update(userIntegrations)
-      .set({ ...updates, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .set({ ...updates, updatedAt: new Date() })
       .where(and(
         eq(userIntegrations.userId, userId),
         eq(userIntegrations.provider, provider)
