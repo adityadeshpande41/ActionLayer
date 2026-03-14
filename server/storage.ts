@@ -768,8 +768,8 @@ export class SqliteStorage implements IStorage {
     if (isPostgres) {
       return results.map((risk: any) => ({
         ...risk,
-        lastSeen: new Date(risk.lastSeen),
-        createdAt: new Date(risk.createdAt),
+        lastSeen: risk.lastSeen ? new Date(risk.lastSeen) : new Date(),
+        createdAt: risk.createdAt ? new Date(risk.createdAt) : new Date(),
       })) as Risk[];
     }
     

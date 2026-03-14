@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProject } from "@/hooks/use-project";
 import { dashboard, analyses } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { formatDate, formatDateShort, parseDate } from "@/lib/date-utils";
 
 function SeverityBadge({ severity }: { severity: "High" | "Med" | "Low" }) {
   const variants: Record<string, string> = {
@@ -83,10 +84,7 @@ export default function Memory() {
             ) : recentAnalyses && recentAnalyses.length > 0 ? (
               <div className="space-y-3">
                 {recentAnalyses.slice(0, 10).map((analysis: any) => {
-                    const createdAt = new Date(analysis.createdAt);
-                    const dateStr = createdAt.getFullYear() >= 2020
-                      ? createdAt.toLocaleDateString()
-                      : "Unknown date";
+                    const dateStr = formatDate(analysis.createdAt);
                     const displayName = analysis.name || `Analysis #${analysis.id.slice(0, 8)}`;
 
                     return (
@@ -176,7 +174,7 @@ export default function Memory() {
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <TrendingUp className="h-3 w-3" />
-                        <span>First seen {risk.lastSeen && risk.lastSeen !== "Unknown" ? risk.lastSeen : "recently"}</span>
+                        <span>First seen {formatDateShort(risk.lastSeen)}</span>
                       </div>
                     </div>
                   ))}

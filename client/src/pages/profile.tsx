@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { auth } from "@/lib/api";
 import { User, Mail, Loader2 } from "lucide-react";
+import { formatDate } from "@/lib/date-utils";
 
 export default function Profile() {
   const { toast } = useToast();
@@ -84,7 +85,7 @@ export default function Profile() {
               <div className="space-y-2">
                 <Label>Account Created</Label>
                 <p className="text-sm">
-                  {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : "Unknown"}
+                  {user?.createdAt ? formatDate(user.createdAt) : "Unknown"}
                 </p>
               </div>
             </div>

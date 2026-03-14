@@ -28,6 +28,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dashboard, analyses } from "@/lib/api";
 import { useProject } from "@/hooks/use-project";
+import { formatDate, formatDateTime } from "@/lib/date-utils";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "wouter";
@@ -138,14 +139,14 @@ export default function Dashboard() {
   });
 
   const handleDelete = (analysis: any) => {
-    if (confirm(`Delete analysis from ${new Date(analysis.createdAt).toLocaleDateString()}?`)) {
+    if (confirm(`Delete analysis from ${formatDate(analysis.createdAt)}?`)) {
       deleteMutation.mutate(analysis.id);
     }
   };
 
   const handleRename = (analysis: any) => {
     setSelectedAnalysis(analysis);
-    setAnalysisName(analysis.name || `Analysis ${new Date(analysis.createdAt).toLocaleDateString()}`);
+    setAnalysisName(analysis.name || `Analysis ${formatDate(analysis.createdAt)}`);
     setRenameDialogOpen(true);
   };
 
@@ -363,14 +364,7 @@ export default function Dashboard() {
                     {savedAnalyses.map((analysis: any) => (
                       <TableRow key={analysis.id} data-testid={`row-analysis-${analysis.id}`}>
                         <TableCell className="text-sm font-mono text-muted-foreground">
-                          {new Date(analysis.createdAt).toLocaleDateString()}
-                          <br />
-                          <span className="text-xs">
-                            {new Date(analysis.createdAt).toLocaleTimeString([], { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })}
-                          </span>
+                          {formatDateTime(analysis.createdAt)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="text-[11px]">

@@ -17,6 +17,7 @@ import { analyses, approvals, calendar, jira } from "@/lib/api";
 import { Upload, Play, Loader2, AlertTriangle, CheckCircle2, Ban, Copy, MessageSquare, ChevronRight, Lightbulb, ArrowRight, FileText, Mail, TrendingUp, Calendar as CalendarIcon } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { loadAnalysisSettings } from "./settings";
+import { formatDate } from "@/lib/date-utils";
 
 function SeverityBadge({ severity }: { severity: string }) {
   const variants: Record<string, string> = {
@@ -115,7 +116,7 @@ export default function Analyze() {
       setResultsTab("summary");
       toast({ 
         title: "Analysis Loaded", 
-        description: `Viewing analysis from ${new Date(result.createdAt).toLocaleDateString()}` 
+        description: `Viewing analysis from ${formatDate(result.createdAt)}` 
       });
     } catch (error: any) {
       toast({ 
@@ -569,10 +570,7 @@ export default function Analyze() {
               ) : (
                 <div className="space-y-2">
                   {pastAnalyses.map((analysis: any) => {
-                    const createdAt = new Date(analysis.createdAt);
-                    const dateStr = createdAt.getFullYear() >= 2020
-                      ? createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                      : "Unknown date";
+                    const dateStr = formatDate(analysis.createdAt);
                     const displayName = analysis.name || `Analysis #${analysis.id.slice(0, 8)}`;
                     return (
                       <Card

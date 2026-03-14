@@ -38,6 +38,7 @@ import { useProject } from "@/hooks/use-project";
 import { auth } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { dashboard } from "@/lib/api";
+import { formatDate, parseDate } from "@/lib/date-utils";
 
 interface AppHeaderProps {
   title: string;
@@ -72,7 +73,7 @@ export function AppHeader({ title }: AppHeaderProps) {
       title: "Recurring Risk Alert",
       message: risk.risk,
       count: risk.occurrences,
-      time: new Date(risk.lastSeen),
+      time: parseDate(risk.lastSeen) || new Date(),
       priority: "high",
     })) || [];
 
@@ -85,7 +86,7 @@ export function AppHeader({ title }: AppHeaderProps) {
       type: "analysis",
       title: "Analysis Complete",
       message: `Found ${run.risksCount} risks and ${run.decisionsCount} decisions`,
-      time: new Date(run.createdAt),
+      time: parseDate(run.createdAt) || new Date(),
       priority: run.risksCount >= 2 ? "high" : "normal",
     })) || [];
 
@@ -237,7 +238,7 @@ export function AppHeader({ title }: AppHeaderProps) {
                         }}
                       >
                         <Clock className="h-4 w-4 mr-2" />
-                        {new Date(run.createdAt).toLocaleDateString()} - {run.decisionsCount}D / {run.risksCount}R
+                        {formatDate(run.createdAt)} - {run.decisionsCount}D / {run.risksCount}R
                       </CommandItem>
                     ))}
                   </CommandGroup>
