@@ -194,6 +194,7 @@ export default function Home() {
                         <Input
                           id="login-password"
                           type="password"
+                          autoComplete="current-password"
                           placeholder="Enter your password"
                           value={loginData.password}
                           onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
@@ -214,6 +215,7 @@ export default function Home() {
                         <Input
                           id="register-username"
                           placeholder="Choose a username"
+                          autoComplete="username"
                           value={registerData.username}
                           onChange={(e) => setRegisterData({ ...registerData, username: e.target.value })}
                           required
@@ -234,6 +236,7 @@ export default function Home() {
                         <Input
                           id="register-password"
                           type="password"
+                          autoComplete="new-password"
                           placeholder="Choose a password"
                           value={registerData.password}
                           onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}

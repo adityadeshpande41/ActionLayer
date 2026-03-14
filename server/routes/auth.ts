@@ -42,9 +42,10 @@ authRouter.post("/register", async (req, res) => {
       username: user.username,
       email: user.email,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Registration error:", error);
-    res.status(400).json({ error: "Failed to register user" });
+    const message = error?.message || "Failed to register user";
+    res.status(400).json({ error: message });
   }
 });
 
