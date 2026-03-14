@@ -140,3 +140,54 @@ authRouter.get("/me", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch user" });
   }
 });
+
+// Update profile (email)
+authRouter.patch("/profile", async (req, res) => {
+  try {
+    const userId = (req as any).session?.userId;
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+    const { email } = req.body;
+    if (email !== undefined && typeof email !== "string") {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+
+    const updated = await storage.updateUser(userId, { email: email || null });
+    if (!updated) return res.status(404).json({ error: "User not found" });
+
+    res.json({ id: updated.id, username: updated.username, email: updated.email, createdAt: updated.createdAt });
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+// Change password
+authRouter.patch("/change-password", async (req, res) => {
+  try {
+    const userId = (req as any).session?.userId;
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Current and new password are required" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    }
+
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) return res.status(400).json({ error: "Current password is incorrect" });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await storage.updateUser(userId, { password: hashed });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error changing password:", error);
+    res.status(500).json({ error: "Failed to change password" });
+  }
+});

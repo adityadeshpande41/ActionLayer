@@ -39,6 +39,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUserGoogleToken(userId: string, token: string | null): Promise<void>;
   getUserGoogleToken(userId: string): Promise<string | null>;
+  updateUser(userId: string, updates: { email?: string; username?: string; password?: string }): Promise<User | undefined>;
   updateUserJiraConfig(userId: string, config: { baseUrl: string; email: string; apiToken: string } | null): Promise<void>;
   getUserJiraConfig(userId: string): Promise<{ baseUrl: string; email: string; apiToken: string } | null>;
 
@@ -142,6 +143,14 @@ export class MemStorage implements IStorage {
       user.googleCalendarToken = token;
       this.users.set(userId, user);
     }
+  }
+
+  async updateUser(userId: string, updates: { email?: string; username?: string; password?: string }): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    const updated = { ...user, ...updates };
+    this.users.set(userId, updated);
+    return updated;
   }
 
   async getUserGoogleToken(userId: string): Promise<string | null> {
@@ -546,6 +555,11 @@ export class SqliteStorage implements IStorage {
     await db.update(users)
       .set({ googleCalendarToken: token })
       .where(eq(users.id, userId));
+  }
+
+  async updateUser(userId: string, updates: { email?: string; username?: string; password?: string }): Promise<User | undefined> {
+    await db.update(users).set(updates).where(eq(users.id, userId));
+    return this.getUser(userId);
   }
 
   async getUserGoogleToken(userId: string): Promise<string | null> {
