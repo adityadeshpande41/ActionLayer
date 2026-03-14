@@ -962,7 +962,8 @@ export class SqliteStorage implements IStorage {
     const id = randomUUID();
     
     if (isPostgres) {
-      // Use raw SQL for PostgreSQL to avoid timestamp conversion issues
+      // Use raw SQL for PostgreSQL - cast dates properly as SQL fragments
+      const startDateValue = sql`${insertEvent.startDate.toISOString()}::timestamp`;
       const endDateValue = insertEvent.endDate 
         ? sql`${insertEvent.endDate.toISOString()}::timestamp`
         : sql`NULL`;
@@ -976,7 +977,7 @@ export class SqliteStorage implements IStorage {
         ) VALUES (
           ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
           ${insertEvent.description || null}, ${insertEvent.eventType},
-          ${insertEvent.startDate.toISOString()}::timestamp,
+          ${startDateValue},
           ${endDateValue},
           ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
           ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
