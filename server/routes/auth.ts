@@ -1,19 +1,25 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import { storage } from "../storage";
-import { insertUserSchema } from "@shared/schema";
 
 export const authRouter = Router();
 
 // Register
 authRouter.post("/register", async (req, res) => {
   try {
-    const { username, password, email } = insertUserSchema.parse(req.body);
+    const { username, password, email } = req.body;
+
+    if (!username || typeof username !== "string" || username.trim().length < 2) {
+      return res.status(400).json({ error: "Username must be at least 2 characters" });
+    }
+    if (!password || typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
 
     // Check if user exists
-    const existingUser = await storage.getUserByUsername(username);
+    const existingUser = await storage.getUserByUsername(username.trim());
     if (existingUser) {
-      return res.status(400).json({ error: "Username already exists" });
+      return res.status(400).json({ error: "Username already taken" });
     }
 
     // Hash password
@@ -21,15 +27,14 @@ authRouter.post("/register", async (req, res) => {
 
     // Create user
     const user = await storage.createUser({
-      username,
+      username: username.trim(),
       password: hashedPassword,
-      email,
+      email: email || null,
     });
 
     // Set session
     (req as any).session.userId = user.id;
     
-    // Explicitly save session before responding
     await new Promise<void>((resolve, reject) => {
       (req as any).session.save((err: any) => {
         if (err) reject(err);
@@ -44,8 +49,7 @@ authRouter.post("/register", async (req, res) => {
     });
   } catch (error: any) {
     console.error("Registration error:", error);
-    const message = error?.message || "Failed to register user";
-    res.status(400).json({ error: message });
+    res.status(500).json({ error: error?.message || "Failed to register user" });
   }
 });
 
