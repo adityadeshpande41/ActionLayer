@@ -63,6 +63,7 @@ export const analyses = sqliteTable("analyses", {
   transcriptId: text("transcript_id").references(() => transcripts.id),
   projectId: text("project_id").notNull().references(() => projects.id),
   userId: text("user_id").notNull().references(() => users.id),
+  name: text("name"), // User-defined name for the analysis
   inputType: text("input_type").notNull(), // 'transcript', 'intake', 'command'
   summary: text("summary", { mode: "json" }), // JSON stored as text
   decisionsCount: integer("decisions_count").default(0),

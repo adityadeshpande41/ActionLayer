@@ -534,3 +534,33 @@ analysesRouter.delete("/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to delete analysis" });
   }
 });
+
+// Rename analysis
+analysesRouter.patch("/:id/rename", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    const analysis = await storage.getAnalysis(req.params.id);
+    if (!analysis) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (analysis.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const updated = await storage.updateAnalysis(req.params.id, { name: name.trim() });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error renaming analysis:", error);
+    res.status(500).json({ error: "Failed to rename analysis" });
+  }
+});

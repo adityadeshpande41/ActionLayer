@@ -136,6 +136,12 @@ export const analyses = {
   
   generateWhatChanged: (analysisId: string) =>
     fetchAPI(`/analyses/${analysisId}/what-changed`, { method: "POST" }),
+
+  rename: (analysisId: string, name: string) =>
+    fetchAPI(`/analyses/${analysisId}/rename`, { method: "PATCH", body: JSON.stringify({ name }) }),
+
+  delete: (analysisId: string) =>
+    fetchAPI(`/analyses/${analysisId}`, { method: "DELETE" }),
 };
 
 // Command

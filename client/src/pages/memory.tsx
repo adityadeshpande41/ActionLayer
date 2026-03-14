@@ -1,10 +1,14 @@
+import { useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle2, FileText, Ban, Loader2, TrendingUp } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, CheckCircle2, FileText, Ban, Loader2, TrendingUp, Pencil, Check, X } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useProject } from "@/hooks/use-project";
 import { dashboard, analyses } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 function SeverityBadge({ severity }: { severity: "High" | "Med" | "Low" }) {
   const variants: Record<string, string> = {
@@ -21,6 +25,31 @@ function SeverityBadge({ severity }: { severity: "High" | "Med" | "Low" }) {
 
 export default function Memory() {
   const { selectedProjectId } = useProject();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => analyses.rename(id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recent-analyses"] });
+      setEditingId(null);
+      toast({ title: "Renamed", description: "Analysis name updated." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const startEdit = (analysis: any) => {
+    setEditingId(analysis.id);
+    setEditName(analysis.name || `Analysis #${analysis.id.slice(0, 8)}`);
+  };
+
+  const confirmEdit = (id: string) => {
+    if (editName.trim()) renameMutation.mutate({ id, name: editName.trim() });
+  };
 
   // Fetch risk drift (recurring risks)
   const { data: riskDrift, isLoading: riskLoading } = useQuery({
@@ -53,26 +82,64 @@ export default function Memory() {
               </div>
             ) : recentAnalyses && recentAnalyses.length > 0 ? (
               <div className="space-y-3">
-                {recentAnalyses.slice(0, 10).map((analysis: any) => (
-                  <div key={analysis.id} className="flex items-start gap-3 p-3 rounded-md border">
-                    <div className="rounded-full bg-primary/10 p-2 shrink-0">
-                      <FileText className="h-4 w-4 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-sm font-medium">Analysis #{analysis.id.slice(0, 8)}</p>
-                        <Badge variant="outline" className="text-[10px]">
-                          {new Date(analysis.createdAt).toLocaleDateString()}
-                        </Badge>
+                {recentAnalyses.slice(0, 10).map((analysis: any) => {
+                    // Fix epoch date bug - if date is invalid or 1969, use a fallback
+                    const createdAt = new Date(analysis.createdAt);
+                    const dateStr = createdAt.getFullYear() > 1970
+                      ? createdAt.toLocaleDateString()
+                      : "Unknown date";
+                    const displayName = analysis.name || `Analysis #${analysis.id.slice(0, 8)}`;
+
+                    return (
+                      <div key={analysis.id} className="flex items-start gap-3 p-3 rounded-md border group">
+                        <div className="rounded-full bg-primary/10 p-2 shrink-0">
+                          <FileText className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {editingId === analysis.id ? (
+                              <div className="flex items-center gap-1 flex-1">
+                                <Input
+                                  value={editName}
+                                  onChange={(e) => setEditName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") confirmEdit(analysis.id);
+                                    if (e.key === "Escape") setEditingId(null);
+                                  }}
+                                  className="h-6 text-sm py-0 px-2"
+                                  autoFocus
+                                />
+                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => confirmEdit(analysis.id)}>
+                                  <Check className="h-3 w-3 text-green-600" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingId(null)}>
+                                  <X className="h-3 w-3 text-destructive" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-sm font-medium">{displayName}</p>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-5 w-5 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                                  onClick={() => startEdit(analysis)}
+                                >
+                                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                                <Badge variant="outline" className="text-[10px]">{dateStr}</Badge>
+                              </>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span>{analysis.decisionsCount || 0} decisions</span>
+                            <span>{analysis.risksCount || 0} risks</span>
+                            <span>{analysis.blockersCount || 0} blockers</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>{analysis.decisionsCount || 0} decisions</span>
-                        <span>{analysis.risksCount || 0} risks</span>
-                        <span>{analysis.blockersCount || 0} blockers</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
               </div>
             ) : (
               <div className="text-center py-12">
