@@ -961,7 +961,6 @@ export class SqliteStorage implements IStorage {
 
   async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
     const id = randomUUID();
-    const now = new Date();
 
     const startDate = insertEvent.startDate instanceof Date
       ? insertEvent.startDate
@@ -970,6 +969,56 @@ export class SqliteStorage implements IStorage {
       ? (insertEvent.endDate instanceof Date ? insertEvent.endDate : new Date(insertEvent.endDate))
       : null;
 
+    if (isPostgres) {
+      // PostgreSQL needs ISO strings for timestamp columns, not Date objects or integers
+      const pool = (db as any).session?.client || (db as any)._client;
+      await (db as any).execute(sql`
+        INSERT INTO calendar_events (
+          id, project_id, user_id, title, description, event_type,
+          start_date, end_date, all_day, location, attendees,
+          related_analysis_id, related_action_item_id, status, reminder_minutes,
+          created_at, updated_at
+        ) VALUES (
+          ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
+          ${insertEvent.description || null}, ${insertEvent.eventType},
+          ${startDate.toISOString()}::timestamptz,
+          ${endDate ? endDate.toISOString() : null}::timestamptz,
+          ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
+          ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
+          ${insertEvent.relatedAnalysisId || null}, ${insertEvent.relatedActionItemId || null},
+          ${insertEvent.status || "scheduled"}, ${insertEvent.reminderMinutes || null},
+          NOW(), NOW()
+        )
+      `);
+
+      // Fetch back the created row
+      const rows = await (db as any).execute(sql`
+        SELECT * FROM calendar_events WHERE id = ${id} LIMIT 1
+      `);
+      const row = (rows.rows || rows)[0];
+      return {
+        id: row.id,
+        projectId: row.project_id,
+        userId: row.user_id,
+        title: row.title,
+        description: row.description,
+        eventType: row.event_type,
+        startDate: new Date(row.start_date),
+        endDate: row.end_date ? new Date(row.end_date) : null,
+        allDay: row.all_day,
+        location: row.location,
+        attendees: row.attendees,
+        relatedAnalysisId: row.related_analysis_id,
+        relatedActionItemId: row.related_action_item_id,
+        status: row.status,
+        reminderMinutes: row.reminder_minutes,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+      } as CalendarEvent;
+    }
+
+    // SQLite path
+    const now = new Date();
     await db.insert(calendarEvents).values({
       id,
       projectId: insertEvent.projectId,
@@ -989,22 +1038,9 @@ export class SqliteStorage implements IStorage {
       createdAt: now,
       updatedAt: now,
     } as any);
-    
+
     const result = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1);
-    const event = result[0]!;
-    
-    // Convert ISO strings back to Date objects for PostgreSQL
-    if (isPostgres) {
-      return {
-        ...event,
-        startDate: new Date(event.startDate as any),
-        endDate: event.endDate ? new Date(event.endDate as any) : null,
-        createdAt: new Date(event.createdAt as any),
-        updatedAt: new Date(event.updatedAt as any),
-      } as CalendarEvent;
-    }
-    
-    return event;
+    return result[0]!;
   }
 
   async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
