@@ -570,7 +570,7 @@ export default function Analyze() {
                 <div className="space-y-2">
                   {pastAnalyses.map((analysis: any) => {
                     const createdAt = new Date(analysis.createdAt);
-                    const dateStr = createdAt.getFullYear() > 1970
+                    const dateStr = createdAt.getFullYear() >= 2020
                       ? createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                       : "Unknown date";
                     const displayName = analysis.name || `Analysis #${analysis.id.slice(0, 8)}`;
