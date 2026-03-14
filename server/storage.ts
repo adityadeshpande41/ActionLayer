@@ -778,15 +778,33 @@ export class SqliteStorage implements IStorage {
   }
 
   async getRisksByProjectId(projectId: string): Promise<Risk[]> {
-    const results = await db.select().from(risks).where(eq(risks.projectId, projectId));
     if (isPostgres) {
-      return results.map((r: any) => ({
-        ...r,
-        lastSeen: r.lastSeen ? new Date(r.lastSeen) : new Date(),
-        createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+      const result: any = await (db as any).execute(sql`
+        SELECT *,
+          COALESCE(last_seen, created_at, NOW()) as last_seen,
+          COALESCE(created_at, NOW()) as created_at
+        FROM risks
+        WHERE project_id = ${projectId}
+      `);
+      const rows = result.rows || result;
+      return rows.map((r: any) => ({
+        id: r.id,
+        analysisId: r.analysis_id,
+        projectId: r.project_id,
+        risk: r.risk,
+        severity: r.severity,
+        owner: r.owner,
+        likelihood: r.likelihood,
+        impact: r.impact,
+        mitigation: r.mitigation,
+        confidence: r.confidence,
+        evidence: r.evidence,
+        mentions: r.mentions,
+        createdAt: new Date(r.created_at),
+        lastSeen: new Date(r.last_seen),
       })) as Risk[];
     }
-    return results;
+    return await db.select().from(risks).where(eq(risks.projectId, projectId));
   }
 
   async getTopRisks(limit: number = 5): Promise<Risk[]> {
