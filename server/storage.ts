@@ -532,8 +532,17 @@ export class SqliteStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO users (id, username, password, email, google_calendar_token, jira_base_url, jira_email, jira_api_token, created_at)
+        VALUES (${id}, ${insertUser.username}, ${insertUser.password}, ${insertUser.email || null},
+                NULL, NULL, NULL, NULL, NOW())
+      `);
+      return this.getUser(id) as Promise<User>;
+    }
+
     const now = new Date();
-    
     await db.insert(users).values({
       id,
       username: insertUser.username,
@@ -545,8 +554,7 @@ export class SqliteStorage implements IStorage {
       jiraApiToken: null,
       createdAt: now,
     });
-    
-    // Fetch the created user to get the actual timestamp
+
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0]!;
   }
@@ -623,8 +631,18 @@ export class SqliteStorage implements IStorage {
 
   async createProject(insertProject: InsertProject): Promise<Project> {
     const id = randomUUID();
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO projects (id, name, description, owner_id, created_at, updated_at)
+        VALUES (${id}, ${insertProject.name}, ${insertProject.description || null}, ${insertProject.ownerId}, NOW(), NOW())
+      `);
+      const rows = await (db as any).execute(sql`SELECT * FROM projects WHERE id = ${id} LIMIT 1`);
+      const r = (rows.rows || rows)[0];
+      return { id: r.id, name: r.name, description: r.description, ownerId: r.owner_id, createdAt: new Date(r.created_at), updatedAt: new Date(r.updated_at) } as Project;
+    }
+
     const now = new Date();
-    
     await db.insert(projects).values({
       id,
       name: insertProject.name,
@@ -633,7 +651,7 @@ export class SqliteStorage implements IStorage {
       createdAt: now,
       updatedAt: now,
     });
-    
+
     const result = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
     return result[0]!;
   }
@@ -657,7 +675,18 @@ export class SqliteStorage implements IStorage {
 
   async createTranscript(insertTranscript: InsertTranscript): Promise<Transcript> {
     const id = randomUUID();
-    
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO transcripts (id, project_id, user_id, content, meeting_type, file_name, created_at)
+        VALUES (${id}, ${insertTranscript.projectId}, ${insertTranscript.userId}, ${insertTranscript.content},
+                ${insertTranscript.meetingType || null}, ${insertTranscript.fileName || null}, NOW())
+      `);
+      const rows = await (db as any).execute(sql`SELECT * FROM transcripts WHERE id = ${id} LIMIT 1`);
+      const r = (rows.rows || rows)[0];
+      return { id: r.id, projectId: r.project_id, userId: r.user_id, content: r.content, meetingType: r.meeting_type, fileName: r.file_name, createdAt: new Date(r.created_at) } as Transcript;
+    }
+
     await db.insert(transcripts).values({
       id,
       projectId: insertTranscript.projectId,
@@ -667,7 +696,7 @@ export class SqliteStorage implements IStorage {
       fileName: insertTranscript.fileName || null,
       createdAt: new Date(),
     });
-    
+
     const result = await db.select().from(transcripts).where(eq(transcripts.id, id)).limit(1);
     return result[0]!;
   }
@@ -742,7 +771,20 @@ export class SqliteStorage implements IStorage {
 
   async createAnalysis(insertAnalysis: InsertAnalysis): Promise<Analysis> {
     const id = randomUUID();
-    
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO analyses (id, transcript_id, project_id, user_id, name, input_type, summary, decisions_count, risks_count, blockers_count, status, created_at)
+        VALUES (${id}, ${insertAnalysis.transcriptId || null}, ${insertAnalysis.projectId}, ${insertAnalysis.userId},
+                ${insertAnalysis.name || null}, ${insertAnalysis.inputType}, ${insertAnalysis.summary ? JSON.stringify(insertAnalysis.summary) : null},
+                ${insertAnalysis.decisionsCount || 0}, ${insertAnalysis.risksCount || 0}, ${insertAnalysis.blockersCount || 0},
+                ${insertAnalysis.status || 'completed'}, NOW())
+      `);
+      const rows = await (db as any).execute(sql`SELECT * FROM analyses WHERE id = ${id} LIMIT 1`);
+      const a = (rows.rows || rows)[0];
+      return { id: a.id, transcriptId: a.transcript_id, projectId: a.project_id, userId: a.user_id, name: a.name, inputType: a.input_type, summary: a.summary, decisionsCount: a.decisions_count, risksCount: a.risks_count, blockersCount: a.blockers_count, status: a.status, createdAt: new Date(a.created_at) } as Analysis;
+    }
+
     await db.insert(analyses).values({
       id,
       transcriptId: insertAnalysis.transcriptId || null,
@@ -757,7 +799,7 @@ export class SqliteStorage implements IStorage {
       blockersCount: insertAnalysis.blockersCount || null,
       createdAt: new Date(),
     });
-    
+
     const result = await db.select().from(analyses).where(eq(analyses.id, id)).limit(1);
     return result[0]!;
   }
@@ -789,7 +831,19 @@ export class SqliteStorage implements IStorage {
 
   async createDecision(insertDecision: InsertDecision): Promise<Decision> {
     const id = randomUUID();
-    
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO decisions (id, analysis_id, project_id, decision, owner, rationale, confidence, evidence, created_at)
+        VALUES (${id}, ${insertDecision.analysisId}, ${insertDecision.projectId}, ${insertDecision.decision},
+                ${insertDecision.owner || null}, ${insertDecision.rationale || null}, ${insertDecision.confidence || null},
+                ${insertDecision.evidence || null}, NOW())
+      `);
+      const rows = await (db as any).execute(sql`SELECT * FROM decisions WHERE id = ${id} LIMIT 1`);
+      const r = (rows.rows || rows)[0];
+      return { id: r.id, analysisId: r.analysis_id, projectId: r.project_id, decision: r.decision, owner: r.owner, rationale: r.rationale, confidence: r.confidence, evidence: r.evidence, createdAt: new Date(r.created_at) } as Decision;
+    }
+
     await db.insert(decisions).values({
       id,
       analysisId: insertDecision.analysisId,
@@ -801,7 +855,7 @@ export class SqliteStorage implements IStorage {
       evidence: insertDecision.evidence || null,
       createdAt: new Date(),
     });
-    
+
     const result = await db.select().from(decisions).where(eq(decisions.id, id)).limit(1);
     return result[0]!;
   }
@@ -861,8 +915,21 @@ export class SqliteStorage implements IStorage {
 
   async createRisk(insertRisk: InsertRisk): Promise<Risk> {
     const id = randomUUID();
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO risks (id, analysis_id, project_id, risk, severity, owner, likelihood, impact, mitigation, confidence, evidence, mentions, created_at, last_seen)
+        VALUES (${id}, ${insertRisk.analysisId}, ${insertRisk.projectId}, ${insertRisk.risk}, ${insertRisk.severity},
+                ${insertRisk.owner || null}, ${insertRisk.likelihood || null}, ${insertRisk.impact || null},
+                ${insertRisk.mitigation || null}, ${insertRisk.confidence || null}, ${insertRisk.evidence || null},
+                1, NOW(), NOW())
+      `);
+      const rows = await (db as any).execute(sql`SELECT * FROM risks WHERE id = ${id} LIMIT 1`);
+      const r = (rows.rows || rows)[0];
+      return { id: r.id, analysisId: r.analysis_id, projectId: r.project_id, risk: r.risk, severity: r.severity, owner: r.owner, likelihood: r.likelihood, impact: r.impact, mitigation: r.mitigation, confidence: r.confidence, evidence: r.evidence, mentions: r.mentions, createdAt: new Date(r.created_at), lastSeen: new Date(r.last_seen) } as Risk;
+    }
+
     const now = new Date();
-    
     await db.insert(risks).values({
       id,
       analysisId: insertRisk.analysisId,
@@ -879,7 +946,7 @@ export class SqliteStorage implements IStorage {
       createdAt: now,
       lastSeen: now,
     });
-    
+
     const result = await db.select().from(risks).where(eq(risks.id, id)).limit(1);
     return result[0]!;
   }
@@ -895,7 +962,19 @@ export class SqliteStorage implements IStorage {
 
   async createActionItem(insertActionItem: InsertActionItem): Promise<ActionItem> {
     const id = randomUUID();
-    
+
+    if (isPostgres) {
+      await (db as any).execute(sql`
+        INSERT INTO action_items (id, analysis_id, project_id, action, owner, due_date, status, priority, created_at)
+        VALUES (${id}, ${insertActionItem.analysisId}, ${insertActionItem.projectId}, ${insertActionItem.action},
+                ${insertActionItem.owner || null}, NULL,
+                ${insertActionItem.status || 'pending'}, ${insertActionItem.priority || null}, NOW())
+      `);
+      const rows = await (db as any).execute(sql`SELECT * FROM action_items WHERE id = ${id} LIMIT 1`);
+      const r = (rows.rows || rows)[0];
+      return { id: r.id, analysisId: r.analysis_id, projectId: r.project_id, action: r.action, owner: r.owner, dueDate: r.due_date ? new Date(r.due_date) : null, status: r.status, priority: r.priority, createdAt: new Date(r.created_at) } as ActionItem;
+    }
+
     await db.insert(actionItems).values({
       id,
       analysisId: insertActionItem.analysisId,
@@ -907,7 +986,7 @@ export class SqliteStorage implements IStorage {
       priority: insertActionItem.priority || null,
       createdAt: new Date(),
     });
-    
+
     const result = await db.select().from(actionItems).where(eq(actionItems.id, id)).limit(1);
     return result[0]!;
   }
