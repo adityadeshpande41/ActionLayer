@@ -41,8 +41,16 @@ if (isPostgres) {
     `UPDATE projects SET updated_at = NOW() WHERE updated_at IS NULL OR updated_at < '2020-01-01'`,
   ];
   Promise.all(backfillQueries.map(q => pool.query(q)))
-    .then(() => console.log("[Database] Backfill: timestamps fixed"))
+    .then((results) => {
+      const counts = results.map((r, i) => `q${i}:${r.rowCount}`).join(', ');
+      console.log(`[Database] Backfill complete: ${counts}`);
+    })
     .catch((err: any) => console.error("[Database] Backfill error:", err.message));
+
+  // Debug: log a sample of raw created_at values to diagnose date issues
+  pool.query(`SELECT id, created_at, pg_typeof(created_at) as col_type FROM analyses LIMIT 3`)
+    .then((r: any) => console.log("[Database] Sample analyses dates:", JSON.stringify(r.rows)))
+    .catch(() => {});
 } else {
   // SQLite for development
   const sqlite = new Database(databaseUrl || "sqlite.db");
