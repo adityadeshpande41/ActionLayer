@@ -971,7 +971,6 @@ export class SqliteStorage implements IStorage {
 
     if (isPostgres) {
       // PostgreSQL needs ISO strings for timestamp columns, not Date objects or integers
-      const pool = (db as any).session?.client || (db as any)._client;
       await (db as any).execute(sql`
         INSERT INTO calendar_events (
           id, project_id, user_id, title, description, event_type,
@@ -982,7 +981,7 @@ export class SqliteStorage implements IStorage {
           ${id}, ${insertEvent.projectId}, ${insertEvent.userId}, ${insertEvent.title},
           ${insertEvent.description || null}, ${insertEvent.eventType},
           ${startDate.toISOString()}::timestamptz,
-          ${endDate ? endDate.toISOString() : null}::timestamptz,
+          ${endDate ? sql`${endDate.toISOString()}::timestamptz` : sql`NULL`},
           ${insertEvent.allDay ?? false}, ${insertEvent.location || null},
           ${insertEvent.attendees ? JSON.stringify(insertEvent.attendees) : null},
           ${insertEvent.relatedAnalysisId || null}, ${insertEvent.relatedActionItemId || null},
@@ -1044,6 +1043,31 @@ export class SqliteStorage implements IStorage {
   }
 
   async updateCalendarEvent(id: string, updates: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
+    if (isPostgres) {
+      // Build SET clause manually to handle date fields properly
+      const setParts: any[] = [];
+      if (updates.title !== undefined) setParts.push(sql`title = ${updates.title}`);
+      if (updates.description !== undefined) setParts.push(sql`description = ${updates.description}`);
+      if (updates.eventType !== undefined) setParts.push(sql`event_type = ${updates.eventType}`);
+      if (updates.startDate !== undefined) {
+        const d = updates.startDate instanceof Date ? updates.startDate : new Date(updates.startDate);
+        setParts.push(sql`start_date = ${d.toISOString()}::timestamptz`);
+      }
+      if (updates.endDate !== undefined) {
+        const d = updates.endDate ? (updates.endDate instanceof Date ? updates.endDate : new Date(updates.endDate)) : null;
+        setParts.push(d ? sql`end_date = ${d.toISOString()}::timestamptz` : sql`end_date = NULL`);
+      }
+      if (updates.allDay !== undefined) setParts.push(sql`all_day = ${updates.allDay}`);
+      if (updates.location !== undefined) setParts.push(sql`location = ${updates.location}`);
+      if (updates.status !== undefined) setParts.push(sql`status = ${updates.status}`);
+      if (updates.reminderMinutes !== undefined) setParts.push(sql`reminder_minutes = ${updates.reminderMinutes}`);
+      setParts.push(sql`updated_at = NOW()`);
+
+      const setClause = sql.join(setParts, sql`, `);
+      await (db as any).execute(sql`UPDATE calendar_events SET ${setClause} WHERE id = ${id}`);
+      return this.getCalendarEvent(id);
+    }
+
     await db.update(calendarEvents)
       .set({ ...updates, updatedAt: new Date() } as any)
       .where(eq(calendarEvents.id, id));
